@@ -3,6 +3,8 @@
 --  執行：npm run db:local
 -- ============================================================
 
+DROP TRIGGER IF EXISTS trg_trade_buy_guard;
+DROP TRIGGER IF EXISTS trg_trade_sell_guard;
 DROP TABLE IF EXISTS trades;
 DROP TABLE IF EXISTS holdings;
 DROP TABLE IF EXISTS stocks;
@@ -48,6 +50,38 @@ CREATE INDEX idx_trades_account ON trades(account_id, id DESC);
 
 -- 索引②：查「某檔股票的所有交易」
 CREATE INDEX idx_trades_symbol ON trades(symbol);
+
+-- ============================================================
+--  Trigger：資料庫層的最後防線
+--
+--  應用層（trading.js）會先檢查一次，是為了給人看得懂的錯誤訊息。
+--  但「檢查」與「寫入」之間仍有極小的競態窗口；
+--  這兩個 Trigger 確保就算兩個請求同時進來，
+--  也不可能出現負現金或超賣。
+--
+--  注意：寫入順序必須是「先 INSERT trades，再更新餘額／持股」，
+--  這樣 Trigger 讀到的是交易前的狀態。
+-- ============================================================
+
+CREATE TRIGGER trg_trade_buy_guard
+BEFORE INSERT ON trades
+WHEN NEW.side = 'BUY'
+ AND (SELECT cash FROM accounts WHERE id = NEW.account_id) < NEW.amount
+BEGIN
+  SELECT RAISE(ABORT, 'INSUFFICIENT_CASH');
+END;
+
+CREATE TRIGGER trg_trade_sell_guard
+BEFORE INSERT ON trades
+WHEN NEW.side = 'SELL'
+ AND COALESCE(
+       (SELECT shares FROM holdings
+         WHERE account_id = NEW.account_id AND symbol = NEW.symbol),
+       0
+     ) < NEW.shares
+BEGIN
+  SELECT RAISE(ABORT, 'INSUFFICIENT_SHARES');
+END;
 
 -- 種子資料
 INSERT INTO stocks (symbol, name, price) VALUES
