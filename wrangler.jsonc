@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stock-sim",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+
+  // 這就是「Worker + D1」的接線：
+  // 把 D1 資料庫綁定到程式裡的 env.DB
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "stock_sim",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}
