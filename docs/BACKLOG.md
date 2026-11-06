@@ -32,19 +32,19 @@
 |---|---|---|---|---|
 | S1-1 | Git + `.gitignore` | 版本控制 | 0.5h | ✅ |
 | S1-2 | 新 repo `stock-market-sim-worker` + 首次推送 | 協作基礎 | 0.5h | ✅ |
-| S1-3 | 抽出 `src/http.js`（JSON 回應、錯誤碼 → 狀態碼） | HTTP 層變薄 | 0.5h | ⬜ |
-| S1-4 | 抽出 `src/domain/trading.js`（`placeOrder`） | 交易邏輯最深 | 1.5h | ⬜ |
-| S1-5 | 抽出 `src/domain/portfolio.js`（`snapshot` + 純計算） | 資產計算可單測 | 1h | ⬜ |
-| S1-6 | 抽出 `src/domain/market.js`（`round2`、價格邊界） | 價格邏輯集中 | 0.5h | ⬜ |
-| S1-7 | SQL 集中到 `src/db/queries.js` | 改 schema 只改一處 | 1h | ⬜ |
-| S1-8 | 前端搬到 `src/page.js` | `index.js` 只剩路由 | 0.5h | ⬜ |
-| S1-9 | 統一錯誤碼 `{ ok:false, code, message }` | 前端穩定處理 | 1h | ⬜ |
-| S1-10 | 加 DB Trigger：負現金／超賣由資料庫擋下 | 競態的最後防線 | 1h | ⬜ |
-| S1-11 | 裝 `vitest` + `@cloudflare/vitest-pool-workers` | 測試環境 | 1h | ⬜ |
-| S1-12 | 單元測試：參數驗證、資產計算 | 純函式好測 | 1h | ⬜ |
-| S1-13 | 整合測試：買、賣、餘額不足、持股不足、交易紀錄 | 真 Worker + 真 D1 | 2h | ⬜ |
-| S1-14 | GitHub Actions：PR 自動跑 `npm test` | 紅燈不能合併 | 0.5h | ⬜ |
-| S1-15 | README 更新（指令、架構、測試） | 組員看得懂 | 0.5h | ⬜ |
+| S1-3 | 抽出 `src/http.js`（JSON 回應、錯誤碼 → 狀態碼） | HTTP 層變薄 | 0.5h | ✅ |
+| S1-4 | 抽出 `src/domain/trading.js`（`placeOrder`） | 交易邏輯最深 | 1.5h | ✅ |
+| S1-5 | 抽出 `src/domain/portfolio.js`（`snapshot` + 純計算） | 資產計算可單測 | 1h | ✅ |
+| S1-6 | 抽出 `src/domain/market.js`（`round2`、價格邊界） | 價格邏輯集中 | 0.5h | ✅ |
+| S1-7 | SQL 集中到 `src/db/queries.js` | 改 schema 只改一處 | 1h | ✅ |
+| S1-8 | 前端搬到 `src/page.js` | `index.js` 只剩路由 | 0.5h | ✅ |
+| S1-9 | 統一錯誤碼 `{ ok:false, code, message }` | 前端穩定處理 | 1h | ✅ |
+| S1-10 | 加 DB Trigger：負現金／超賣由資料庫擋下 | 競態的最後防線 | 1h | ✅ |
+| S1-11 | 裝 `vitest` + `@cloudflare/vitest-plugin` | 測試環境 | 1h | ✅ |
+| S1-12 | 單元測試：參數驗證、資產計算 | 純函式好測 | 1h | ✅ |
+| S1-13 | 整合測試：買、賣、餘額不足、持股不足、交易紀錄 | 真 Worker + 真 D1 | 2h | ✅ |
+| S1-14 | GitHub Actions：PR 自動跑 `npm test` | 紅燈不能合併 | 0.5h | ✅ |
+| S1-15 | README 更新（指令、架構、測試） | 組員看得懂 | 0.5h | ✅ |
 
 **驗收**：行為與現在相同，`npm test` 全綠，PR 會自動跑測試。
 

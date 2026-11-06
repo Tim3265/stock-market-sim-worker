@@ -7,9 +7,13 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 execute stock_sim --local --file=./schema.sql",
-    "db:remote": "wrangler d1 execute stock_sim --remote --file=./schema.sql"
+    "db:remote": "wrangler d1 execute stock_sim --remote --file=./schema.sql",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.6.0",
+    "vitest": "^5.1.0",
     "wrangler": "^4.0.0"
   },
   "allowScripts": {

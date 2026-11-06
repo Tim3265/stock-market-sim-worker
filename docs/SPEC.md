@@ -603,7 +603,7 @@ snapshot(db, accountId)
 - `db` 由外部注入（`placeOrder(db, ...)`），不從 `env` 直接抓
 - HTTP 層只做 request → 參數、結果 → 狀態碼
 - 測試表面就是 `placeOrder` 的介面
-- 工具：`vitest` + `@cloudflare/vitest-pool-workers`
+- 工具：`vitest` + `@cloudflare/vitest-plugin`（跑在真的 Workers runtime）
 - 單元測試：純函式（驗證、資產計算、撮合排序）
 - 整合測試：真的 Worker + 真的 D1（Miniflare）
 
