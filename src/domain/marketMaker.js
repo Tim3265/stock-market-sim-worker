@@ -1,0 +1,49 @@
+// Quotes are real funded orders. Requote and tick claim commit in one D1 batch.
+const BOT = 1000000;
+const round = n => Math.round(n * 100) / 100;
+export async function maybeTick(db, now = Date.now()) {
+  const state = await db.prepare('SELECT * FROM market_state WHERE id=1').first();
+  if (!state || now - state.last_tick_at < 10000) return false;
+  const stocks=(await db.prepare('SELECT * FROM stocks ORDER BY symbol').all()).results;
+  const maker=await db.prepare('SELECT cash FROM accounts WHERE id=1000000').first();
+  if(!maker) throw new Error('Market maker account is missing');
+  const inventory=(await db.prepare('SELECT symbol,shares FROM holdings WHERE account_id=1000000').all()).results;
+  const inventoryBySymbol=new Map(inventory.map(h=>[h.symbol,Number(h.shares)]));
+  let remainingCash=Math.round(Number(maker.cash)*100);
+  const date=new Date(now+8*3600000).toISOString().slice(0,10);
+  const prepared=[
+    db.prepare('UPDATE market_state SET match_seq=match_seq+1,tick_count=tick_count+1,last_tick_at=? WHERE id=1 AND match_seq=? AND last_tick_at=?').bind(now,state.match_seq,state.last_tick_at),
+    db.prepare('INSERT INTO transaction_guard(value) SELECT changes()'),
+    db.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=? AND status IN ('OPEN','PARTIAL')").bind(BOT),
+    db.prepare('UPDATE accounts SET frozen_cash=0 WHERE id=?').bind(BOT),
+    db.prepare('UPDATE holdings SET frozen_shares=0 WHERE account_id=?').bind(BOT),
+  ];
+  let totalCash=0;
+  for(const stock of stocks){
+    const reference=stock.ref_date===date?stock.ref_price:stock.price;
+    const low=Math.ceil(Math.round(reference*100)*0.9)/100,high=Math.floor(Math.round(reference*100)*1.1)/100;
+    // Quote center stays separate from the last executed stock price.
+    const previous=Number(stock.price),fair=Number(stock.fair_price)||previous;
+    const symbolSeed=Array.from(stock.symbol).reduce((n,c)=>n+c.charCodeAt(0),0);
+    const randomUnit=Math.sin((Number(state.tick_count)+1)*431+symbolSeed*17)*43758.5453;
+    const noise=((randomUnit-Math.floor(randomUnit))*2-1)*Number(stock.volatility);
+    const movement=Math.max(-0.03,Math.min(0.03,-0.05*(previous-fair)/fair+noise));
+    const center=previous*(1+movement);
+    prepared.push(db.prepare('UPDATE stocks SET ref_price=?,ref_date=? WHERE symbol=?').bind(reference,date,stock.symbol));
+    let reservedShares=0, remainingShares=inventoryBySymbol.get(stock.symbol)??0;
+    for(const [offset,factor] of [[0.001,0.2],[0.003,0.5],[0.008,1]]){
+      const qty=Math.max(1,Math.floor(stock.liquidity*factor));
+      const buy=Math.max(0.01,Math.max(low,round(center*(1-offset))));
+      const sell=Math.min(high,Math.max(0.01,round(center*(1+offset))));
+      const buyCents=Math.round(buy*100), buyQty=Math.min(qty,Math.floor(remainingCash/buyCents));
+      const sellQty=Math.min(qty,remainingShares);
+      if(buyQty>0){const reserved=buyCents*buyQty;remainingCash-=reserved;totalCash=round(totalCash+reserved/100);prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status) VALUES(?,?,'BUY','LIMIT',?,?,'OPEN')").bind(BOT,stock.symbol,buy,buyQty));}
+      if(sellQty>0){remainingShares-=sellQty;reservedShares+=sellQty;prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status) VALUES(?,?,'SELL','LIMIT',?,?,'OPEN')").bind(BOT,stock.symbol,sell,sellQty));}
+    }
+    prepared.push(db.prepare('UPDATE holdings SET frozen_shares=? WHERE account_id=? AND symbol=?').bind(reservedShares,BOT,stock.symbol));
+  }
+  prepared.push(db.prepare('UPDATE accounts SET frozen_cash=? WHERE id=?').bind(totalCash,BOT));
+  prepared.push(db.prepare('DELETE FROM transaction_guard'));
+  try { await db.batch(prepared);return true; }
+  catch(e){if(String(e).includes('market_revision_guard'))return false;throw e;}
+}

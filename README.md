@@ -1,188 +1,36 @@
-# 股市模擬 — Worker + D1
+# 股市模擬 — Workers + D1
 
-資料庫管理實務 · 期末專題
-Cloudflare Workers + D1（SQLite）模擬股市，玩家的買賣會推動價格。
+資料庫管理實務期末專題：虛擬現金與虛構交易。Sprint 2 提供六檔股票、市價委託、造市商報價、部分成交與五檔顯示。
 
-## 文件
+## 玩法
 
-- [規格書 SPEC](docs/SPEC.md) — v0.5：委託簿撮合、機器人參與者、部分成交
-- [待辦清單 BACKLOG](docs/BACKLOG.md) — Sprint 1～5
+每個請求檢查是否經過 10 秒；有人操作時，造市商依可用資金與庫存重新掛三層買賣單。沒人操作就不產生背景 tick；落後只跑一輪。價格只有成交才變動，參考價按台北日期更新，限價不可超過參考價 ±10%。
 
-## 目前進度
+玩家市價單依價格優先、同價依委託編號順序吃單，成交價為掛單價；不能與自己成交，沒有吃到的剩餘股數取消。一次最多處理 50 個掛單，超過該數量的剩餘市價單也會取消。造市商資金或庫存耗盡時，該方向可以沒有報價。買賣不收手續費；手續費與玩家限價掛單是後續功能。
 
-| Sprint | 內容 | 狀態 |
-|---|---|---|
-| **1** | 重構成深模組、單元＋整合測試、CI | ✅ 完成 |
-| 2 | 委託簿、撮合引擎、造市商機器人 | 下一步 |
-| 3 | 玩家限價單、凍結、取消 | 待做 |
-| 4 | 動能／價值／恐慌機器人、走勢圖、報表 | 待做 |
-| 5 | 部署、索引實驗、報告 | 待做 |
+初始顯示六檔：2330 GG、2317 紅海、2454 發哥、3711 日月潭、YZU 元智 AI、YOUJIAN 右鍵；後兩檔為虛構公司。造市商是可持有現金與股票的帳戶，買賣雙方的資金、持股、委託、成交與行情寫入同一個 D1 batch。市場版本衝突會重新讀取並重試，重複 request_id 不會重複成交。
 
-> 目前畫面仍是 Sprint 1 的行為：市價買賣、持股、資產、交易紀錄。
-> 委託簿與機器人會在 Sprint 2 進來。
-
-## 功能（現在）
-
-- 行情表：5 檔股票報價
-- 買進 / 賣出：扣款、更新持股、寫交易紀錄，三件事一個 `batch`
-- 資產結算：現金、持股市值、總資產、報酬率
-- 交易紀錄：JOIN 股票名稱，依時間倒序
-- 統一錯誤碼：`{ ok: false, code, message }`
-- 資料庫 Trigger：就算應用層有競態，也不會負現金或超賣
-
-## 股票清單（Sprint 2 會換成這一組）
-
-| 代號 | 名稱 | 綽號 | 流動性 |
-|---|---|---|---|
-| 2330 | 台積電 | GG | 極高 |
-| 2317 | 鴻海 | 紅海 | 高 |
-| 2454 | 聯發科 | 發哥 | 中 |
-| 3711 | 日月光投控 | 日月潭 | 低 |
-| YZU | 元智智能（虛構） | 元智 AI | 極低，常常不成交 |
-| ? | 右間 | 右間 | 待確認 |
-
-> 目前的 `schema.sql` 還是舊的 5 檔（含 0050、2603），Sprint 2 會更新。
-
-## 架構對照
-
-| 課堂版本 | 這個版本 | 角色 |
-|---|---|---|
-| Apache + PHP | **Worker**（`src/index.js`） | 執行後端程式 |
-| MySQL | **D1**（`env.DB`） | 保存資料（底層 SQLite） |
-| phpMyAdmin | `wrangler d1 execute` | 看資料庫 |
-| `config.php` 連線設定 | `wrangler.jsonc` 的 `d1_databases` | 接線 |
-
-## 檔案結構
-
-```
-Project/
-├─ src/
-│  ├─ index.js              HTTP adapter：路由與狀態碼
-│  ├─ http.js               統一 JSON 回應與錯誤碼
-│  ├─ page.js               前端（原生 HTML + JS）
-│  ├─ domain/
-│  │  ├─ trading.js         下單：驗證、檢查、batch
-│  │  ├─ portfolio.js       資產結算（純函式 + 查詢）
-│  │  └─ market.js          價格工具（Sprint 2 會長大）
-│  └─ db/
-│     └─ queries.js         所有 SQL
-├─ test/
-│  ├─ setup.js              每個測試前重套 schema
-│  ├─ unit.*.test.js        單元測試（純函式）
-│  └─ integration.api.test.js  整合測試（真 Worker + 真 D1）
-├─ schema.sql               建表 + 索引 + Trigger + 種子
-├─ vitest.config.js         測試設定（Workers runtime）
-└─ wrangler.jsonc           把 D1 綁定成 env.DB
-```
-
-**設計原則**：HTTP 層薄、領域邏輯深、SQL 集中。
-`placeOrder()` 就是那個「一句話叫出很多服務」的深模組。
-
-## 資料表
-
-| 表 | 說明 |
-|---|---|
-| `stocks` | 股票主檔（代號、名稱、股價） |
-| `accounts` | 帳戶（初始本金、現金） |
-| `holdings` | 持股（複合主鍵 `account_id + symbol`） |
-| `trades` | 交易紀錄（`side` 分 BUY / SELL） |
-
-索引：
-
-- `idx_trades_account(account_id, id DESC)` — 查某帳戶最近交易
-- `idx_trades_symbol(symbol)` — 查某檔股票的所有交易
-
-Trigger：
-
-- `trg_trade_buy_guard` — 現金不足時擋下
-- `trg_trade_sell_guard` — 超賣時擋下
-
-## API
-
-| 方法 | 路徑 | 作用 |
-|---|---|---|
-| GET | `/api/stocks` | 所有股票 |
-| GET | `/api/account?id=1` | 帳戶 + 持股 + 資產結算 |
-| GET | `/api/trades?id=1&limit=20` | 交易紀錄 |
-| POST | `/api/trade` | 買進 / 賣出 |
-
-`POST /api/trade` 的 body：
-
-```json
-{ "account_id": 1, "symbol": "2330", "side": "BUY", "shares": 10 }
-```
-
-成功：
-
-```json
-{ "ok": true, "trade": { "symbol": "2330", "side": "BUY", "shares": 10, "price": 980, "amount": 9800 } }
-```
-
-失敗：
-
-```json
-{ "ok": false, "code": "INSUFFICIENT_CASH", "message": "現金不足（需要 980000，現有 100000）" }
-```
-
-## 怎麼跑
+## 本機啟動
 
 ```bash
-npm install        # 第一次
-npm run db:local   # 建本機 D1 的資料表（會重建，資料會清空）
-npm run dev        # http://localhost:8787
+npm ci
+npm run db:local:init  # 僅供全新、空的本機 D1；絕不可用來初始化現有資料庫
+npm run db:local       # 套用尚未執行的遷移，保留既有資料
+npm run dev
 ```
 
-## 怎麼測試
+既有本機資料只執行 `npm run db:local`；初始化會在已有資料表時報錯，不會先刪表。`schema.sql` 有 DROP，只供自動化測試的隔離資料庫使用，不可對既有或遠端資料庫執行。升級正式資料前必須停止交易、先備份並驗證回復，再套用遷移；程式回退不會自動還原資料庫。
 
-```bash
-npm test           # 跑一次
-npm run test:watch # 改檔案自動重跑
-```
+## 測試
 
-- **單元測試**：`validateTradeInput`、`checkFunds`、`computeSummary`、價格四捨五入
-- **整合測試**：用 `SELF.fetch()` 打真的 API，D1 也是真的（Miniflare）
-- 每個測試開始前重套 `schema.sql`，測試之間互不影響
-- CI：`.github/workflows/ci.yml`，PR 會自動跑 `npm test`
+`npm test` 執行 Workers runtime + Miniflare D1 單元及整合測試。包含價格／時間排序、部分成交、無對手、價格限制、資金與持股守恆、重複請求、並行競爭、交割失敗回復、低庫存及舊資料遷移。
 
-## 怎麼上線（最後再做）
+`test/browser.sprint2.cjs` 使用 Playwright 和本機 Chrome，應只連至獨立的測試資料庫。可先用 `wrangler d1 execute` 與 `wrangler d1 migrations apply` 搭配獨立 `--persist-to` 建立測試庫，啟動 8789 埠本機 Worker，再執行 `node test/browser.sprint2.cjs`。此測試會真實買賣，不能指向正式或使用中的資料庫。可用環境變數 `E2E_ORIGIN` 指定另一個隔離測試網址。
 
-```bash
-npx wrangler login
-npx wrangler d1 create stock_sim     # 會印出 database_id
-```
+GitHub Actions 執行 `npm test`；瀏覽器測試目前另外執行。D1 真正部署後的網路、權限與效能尚待現場驗證。
 
-把 `database_id` 貼進 `wrangler.jsonc`，然後：
+## 功能範圍
 
-```bash
-npm run db:remote
-npm run deploy
-```
+目前只有固定玩家帳戶，沒有登入與身分授權，不可直接公開使用。動能派、價值派及恐慌賣壓只有種子帳戶，尚不會自動交易；玩家限價掛單、取消委託、交易紀錄篩選及排行榜留在後續 Sprint。造市商報價建立與玩家市價單入口不同，成交共用撮合交割路徑。
 
-## 交易一致性怎麼看
-
-`src/domain/trading.js` 把三件事包成一個 `env.DB.batch([...])`：
-
-1. `INSERT trades` — 先寫紀錄，讓 Trigger 檢查交易前狀態
-2. `UPDATE accounts` — 扣款（買）或入帳（賣）
-3. `UPDATE/INSERT holdings` — 增加或減持股
-
-**任何一句失敗，整批回滾。**
-
-資料庫層再用 Trigger 當最後防線：
-
-```sql
-CREATE TRIGGER trg_trade_buy_guard
-BEFORE INSERT ON trades
-WHEN NEW.side = 'BUY'
- AND (SELECT cash FROM accounts WHERE id = NEW.account_id) < NEW.amount
-BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
-```
-
-即使兩個請求同時下單，也不可能出現負現金或超賣。
-
-## 已知簡化（報告可以寫進去）
-
-- 金額用 `REAL` 存，靠 `ROUND(...,2)` 控制誤差；正式系統應該用整數「分」或定點數。
-- D1 沒有跨語句的互動式交易，只有 `batch()`；Sprint 2 的撮合會再加樂觀鎖。
-- 目前是單一帳戶（`id = 1`），還沒有登入功能。
-- 股價是固定的種子資料，Sprint 2 才會開始變動。
+決策與待辦：[SPEC](docs/SPEC.md)、[BACKLOG](docs/BACKLOG.md)。

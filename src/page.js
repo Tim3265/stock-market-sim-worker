@@ -65,6 +65,8 @@ export const PAGE_HTML = `<!doctype html>
     <tbody id="rows"></tbody>
   </table>
 
+  <h2>委託簿 <small id="book-symbol">選擇股票</small></h2>
+  <table><thead><tr><th>買價</th><th>買量</th><th>賣價</th><th>賣量</th></tr></thead><tbody id="book"></tbody></table>
   <h2>持股</h2>
   <table>
     <thead><tr>
@@ -89,6 +91,7 @@ export const PAGE_HTML = `<!doctype html>
 <script>
 const fmt = n => Number(n).toLocaleString('zh-TW', { maximumFractionDigits: 2 });
 const ACCOUNT = 1;
+let trading = false;
 
 function toast(text, ok) {
   const el = document.getElementById('msg');
@@ -109,11 +112,11 @@ async function load() {
   document.getElementById('rows').innerHTML = stocks.map(s => \`
     <tr>
       <td>\${s.symbol}</td>
-      <td>\${s.name}</td>
+      <td><button onclick="showBook('\${s.symbol}')">\${s.name}\${s.nickname && s.nickname !== s.name ? '（' + s.nickname + '）' : ''}</button></td>
       <td class="num">\${fmt(s.price)}</td>
       <td>
-        <button class="buy" onclick="act('\${s.symbol}','BUY')">買 10 股</button>
-        <button class="sell" onclick="act('\${s.symbol}','SELL')">賣 10 股</button>
+        <button class="buy" onclick="act('\${s.symbol}','BUY')">買進</button>
+        <button class="sell" onclick="act('\${s.symbol}','SELL')">賣出</button>
       </td>
     </tr>\`).join('');
 
@@ -151,23 +154,40 @@ async function load() {
 }
 
 async function act(symbol, side) {
-  const res = await fetch('/api/trade', {
+  if (trading) return;
+  const raw = prompt('請輸入交易股數', '10');
+  if (raw === null) return;
+  const shares = Number(raw);
+  if (!Number.isSafeInteger(shares) || shares < 1) { toast('請輸入正整數股數', false); return; }
+  trading = true;
+  try {
+  const res = await fetch('/api/orders', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ account_id: ACCOUNT, symbol, side, shares: 10 })
+    body: JSON.stringify({ account_id: ACCOUNT, symbol, side, type:'MARKET', shares, request_id:crypto.randomUUID() })
   });
   const data = await res.json();
   if (data.ok) {
-    const t = data.trade;
-    toast((side === 'BUY' ? '買進 ' : '賣出 ') + t.name + ' ' +
-          t.shares + ' 股，' + (side === 'BUY' ? '花費 ' : '入帳 ') + fmt(t.amount), true);
-    load();
+    toast('成交 ' + data.filledShares + ' 股，未成交取消 ' + data.remaining + ' 股，金額 ' + fmt(data.amount), true);
+    await load(); await showBook(symbol);
   } else {
     toast(data.message || data.error || '交易失敗', false);
   }
+  } catch (error) { toast('連線失敗，請重新整理並檢查交易紀錄', false); }
+  finally { trading = false; }
 }
 
-load();
+async function showBook(symbol) {
+  const r=await fetch('/api/orderbook?symbol='+encodeURIComponent(symbol));
+  const data=await r.json();
+  if(!data.ok){toast(data.message || '無法取得委託簿',false);return;}
+  document.getElementById('book-symbol').textContent=symbol;
+  const rows=Array.from({length:5},(_,i)=>{const b=data.bids[i],a=data.asks[i];return '<tr><td>'+ (b?fmt(b.price):'—') +'</td><td>'+ (b?fmt(b.quantity):'—') +'</td><td>'+ (a?fmt(a.price):'—') +'</td><td>'+ (a?fmt(a.quantity):'—') +'</td></tr>';});
+  document.getElementById('book').innerHTML=rows.join('');
+}
+
+load().then(()=>showBook('2330'));
+setInterval(()=>{if(!document.hidden)load().then(()=>{const s=document.getElementById('book-symbol').textContent;if(s)showBook(s);});},15000);
 </script>
 </body>
 </html>`;

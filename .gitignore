@@ -1,5 +1,8 @@
 node_modules/
 .wrangler/
+.local-sprint2-e2e/
+.local-sprint2-final/
+.local-sprint2-proof/
 .dev.vars
 *.log
 .DS_Store

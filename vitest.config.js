@@ -10,13 +10,14 @@ const migrations = await readD1Migrations({
   migrationsDir: ".",
   migrationsPattern: "schema.sql",
 });
+const orderbookMigrations = await readD1Migrations({ migrationsDir: "migrations" });
 
 export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        bindings: { TEST_MIGRATIONS: migrations },
+        bindings: { TEST_MIGRATIONS: migrations, ORDERBOOK_MIGRATIONS: orderbookMigrations },
       },
     }),
   ],
