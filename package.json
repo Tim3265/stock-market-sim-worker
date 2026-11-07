@@ -6,13 +6,15 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:local": "wrangler d1 execute stock_sim --local --file=./schema.sql",
-    "db:remote": "wrangler d1 execute stock_sim --remote --file=./schema.sql",
+    "db:local:init": "wrangler d1 execute stock_sim --local --file=./database/bootstrap.sql",
+    "db:local": "wrangler d1 migrations apply stock_sim --local",
+    "db:remote": "wrangler d1 migrations apply stock_sim --remote",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.6.0",
+    "playwright": "1.65.0",
     "vitest": "^5.1.0",
     "wrangler": "^4.0.0"
   },

@@ -8,5 +8,9 @@ import { env } from "cloudflare:test";
 const statements = env.TEST_MIGRATIONS[0].queries;
 
 beforeEach(async () => {
+  // These tables are created only by the isolated migration tests.
+  for (const table of ["order_fills", "orders", "market_state", "price_history", "transaction_guard"]) {
+    await env.DB.prepare(`DROP TABLE IF EXISTS ${table}`).run();
+  }
   await env.DB.batch(statements.map((sql) => env.DB.prepare(sql)));
 });

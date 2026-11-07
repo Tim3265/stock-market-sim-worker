@@ -9,6 +9,8 @@ import { executeTrade } from "./domain/trading.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
 import { PAGE_HTML } from "./page.js";
+import { book, placeMarketOrder } from './domain/orders.js';
+import { maybeTick } from './domain/marketMaker.js';
 
 const DEFAULT_TRADE_LIMIT = 20;
 const MAX_TRADE_LIMIT = 100;
@@ -20,7 +22,7 @@ export default {
     } catch (err) {
       // 不要把 stack 丟給使用者；log 留給 wrangler tail。
       console.error("unhandled error", err);
-      return fail("INTERNAL", err?.message ?? "伺服器錯誤");
+      return fail("INTERNAL", "伺服器錯誤，請稍後再試");
     }
   },
 };
@@ -28,6 +30,18 @@ export default {
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
+  const upgraded = path.startsWith('/api/') && await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
+  if (upgraded) await maybeTick(env.DB);
+
+  if (path === '/api/orderbook' && request.method === 'GET') {
+    const result=await book(env.DB,url.searchParams.get('symbol')??'');
+    return result.ok ? ok(result) : fail(result.code,result.message);
+  }
+  if (path === '/api/orders' && request.method === 'POST') {
+    let input;try{input=await request.json();}catch{return fail('INVALID_INPUT','請求內容必須是 JSON');}
+    const result=await placeMarketOrder(env.DB,input);
+    return result.ok ? ok(result) : fail(result.code,result.message);
+  }
 
   if (path === "/api/stocks" && request.method === "GET") {
     return listStocks(env);
@@ -39,6 +53,8 @@ async function route(request, env) {
     return getTrades(env, url);
   }
   if (path === "/api/trade" && request.method === "POST") {
+    // The old direct-settlement route would bypass order-book reservations.
+    if (upgraded) return fail('INVALID_INPUT','請使用委託簿下單');
     return postTrade(request, env);
   }
 
@@ -55,7 +71,8 @@ async function route(request, env) {
 
 // ---------- GET /api/stocks ----------
 async function listStocks(env) {
-  const stocks = await queries.listStocks(env.DB);
+  let stocks = await queries.listStocks(env.DB);
+  if(await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first()) stocks=(await env.DB.prepare("SELECT symbol,name,nickname,price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
   return ok({ stocks });
 }
 
