@@ -33,6 +33,13 @@ async function route(request, env) {
   const upgraded = path.startsWith('/api/') && await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
   if (upgraded) { await maybeTick(env.DB); await matchCrossed(env.DB); }
 
+  if (path === '/api/histories' && request.method === 'GET') {
+    const stocks = (await env.DB.prepare("SELECT symbol FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
+    const queries = stocks.map(stock => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(stock.symbol));
+    const rows = queries.length ? await env.DB.batch(queries) : [];
+    return ok({ histories: Object.fromEntries(stocks.map((stock,i)=>[stock.symbol,rows[i].results.reverse()])) });
+  }
+
   if (path === '/api/history' && request.method === 'GET') {
     const symbol = url.searchParams.get('symbol') || '';
     const stock = await env.DB.prepare('SELECT symbol, price FROM stocks WHERE symbol=?').bind(symbol).first();
