@@ -11,6 +11,10 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const r=await get('/api/history?symbol=2330');
   expect(r.status).toBe(200);
   expect(r.body.history.map(point=>point.price)).toEqual([975,980]);
+  const all=await get('/api/histories');
+  expect(Object.keys(all.body.histories)).toHaveLength(6);
+  expect(all.body.histories['2330'].map(point=>point.price)).toEqual([975,980]);
+  expect(all.body.histories.YZU.map(point=>point.price)).toEqual([45]);
   expect((await get('/api/history?symbol=missing')).status).toBe(404);
  });
  it('限價買單未成交時凍結資金，取消後釋放',async()=>{

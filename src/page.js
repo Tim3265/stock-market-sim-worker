@@ -46,6 +46,14 @@ export const PAGE_HTML = `<!doctype html>
   .chart { background:#171a21; border:1px solid #252a35; border-radius:10px; padding:16px; }
   .chart svg { display:block; width:100%; height:180px; }
   .chart-note { color:#aab2c5; font-size:12px; }
+  .chart-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%, 300px),1fr)); gap:12px; }
+  .chart h3 { margin:0 0 8px; font-size:15px; }
+  dialog { background:#171a21; color:#e7e9ee; border:1px solid #46516a; border-radius:12px; padding:22px; width:min(420px,90vw); }
+  dialog::backdrop { background:rgba(0,0,0,.7); }
+  dialog label { display:block; margin:14px 0 5px; }
+  dialog input { width:100%; padding:10px; background:#0f1115; border:1px solid #46516a; border-radius:6px; color:#fff; }
+  .dialog-actions { display:flex; gap:8px; margin-top:18px; }
+  .dialog-error { color:#fca5a5; min-height:1.5em; }
 </style>
 </head>
 <body>
@@ -67,8 +75,8 @@ export const PAGE_HTML = `<!doctype html>
     <tbody id="rows"></tbody>
   </table>
 
-  <h2>價格走勢 <small id="chart-name">選擇股票</small></h2>
-  <div class="chart"><svg id="chart" role="img" aria-label="最近六小時成交價格走勢"></svg><div class="chart-note" id="chart-note">載入中</div></div>
+  <h2>各公司價格走勢（最近六小時的成交價）</h2>
+  <div id="charts" class="chart-grid"></div>
   <h2>委託簿 <small id="book-symbol">選擇股票</small></h2>
   <table><thead><tr><th>買價</th><th>買量</th><th>賣價</th><th>賣量</th></tr></thead><tbody id="book"></tbody></table>
   <h2>我的委託</h2>
@@ -93,6 +101,16 @@ export const PAGE_HTML = `<!doctype html>
 </div>
 
 <div id="msg"></div>
+<dialog id="trade-dialog" aria-labelledby="trade-title">
+  <form id="trade-form">
+    <h2 id="trade-title"></h2>
+    <label for="trade-shares">交易股數</label>
+    <input id="trade-shares" type="number" min="1" step="1" required>
+    <div id="price-field" hidden><label for="trade-price">每股限價</label><input id="trade-price" type="number" min="0.01" step="0.01"></div>
+    <p id="trade-error" class="dialog-error" role="status"></p>
+    <div class="dialog-actions"><button class="buy" type="submit" id="submit-trade">確認下單</button><button type="button" id="cancel-trade">取消</button></div>
+  </form>
+</dialog>
 
 <script>
 const fmt = n => Number(n).toLocaleString('zh-TW', { maximumFractionDigits: 2 });
@@ -100,6 +118,7 @@ const ACCOUNT = 1;
 let trading = false;
 let selectedSymbol = '2330';
 let stockNames = {};
+let tradeIntent = null;
 
 function toast(text, ok) {
   const el = document.getElementById('msg');
@@ -167,36 +186,49 @@ async function load() {
     : '<tr><td colspan="6" class="empty">還沒有交易</td></tr>';
 }
 
-async function act(symbol, side, isLimit = false) {
+function act(symbol, side, isLimit = false) {
   if (trading) return;
-  const raw = prompt('請輸入交易股數', '10');
-  if (raw === null) return;
-  const shares = Number(raw);
-  if (!Number.isSafeInteger(shares) || shares < 1) { toast('請輸入正整數股數', false); return; }
-  let price = null;
-  if (isLimit) {
-    const rawPrice = prompt('請輸入限價（每股）');
-    if (rawPrice === null) return;
-    price = Number(rawPrice);
-    if (!Number.isFinite(price) || price <= 0) { toast('請輸入有效價格', false); return; }
+  const requestId=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');
+  tradeIntent = {symbol,side,isLimit,requestId};
+  document.getElementById('trade-title').textContent = (stockNames[symbol] || symbol) + ' · ' + (isLimit?'限價':'市價') + (side==='BUY'?'買進':'賣出');
+  document.getElementById('trade-shares').value = '10';
+  document.getElementById('trade-price').value = '';
+  document.getElementById('trade-price').required = isLimit;
+  document.getElementById('price-field').hidden = !isLimit;
+  document.getElementById('trade-error').textContent = '';
+  document.getElementById('trade-dialog').showModal();
+}
+
+document.getElementById('cancel-trade').addEventListener('click',()=>document.getElementById('trade-dialog').close());
+document.getElementById('trade-form').addEventListener('submit',async event => {
+  event.preventDefault();
+  if (trading || !tradeIntent) return;
+  const {symbol,side,isLimit,requestId}=tradeIntent;
+  const shares=Number(document.getElementById('trade-shares').value);
+  const price=isLimit?Number(document.getElementById('trade-price').value):null;
+  if (!Number.isSafeInteger(shares) || shares<1 || shares>10000000 || (isLimit && (!Number.isFinite(price) || price<=0))) {
+    document.getElementById('trade-error').textContent='請輸入有效的股數及價格'; return;
   }
   trading = true;
+  document.getElementById('submit-trade').disabled=true;
   try {
   const res = await fetch('/api/orders', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ account_id: ACCOUNT, symbol, side, type:isLimit?'LIMIT':'MARKET', price, shares, request_id:crypto.randomUUID() })
+    body: JSON.stringify({ account_id: ACCOUNT, symbol, side, type:isLimit?'LIMIT':'MARKET', price, shares, request_id:requestId })
   });
   const data = await res.json();
   if (data.ok) {
+    document.getElementById('trade-dialog').close();
     toast('成交 ' + data.filledShares + ' 股，' + (isLimit?'等待成交 ':'未成交取消 ') + data.remaining + ' 股，金額 ' + fmt(data.amount), true);
-    await load(); await showBook(symbol);
+    try { await load(); await Promise.all([showBook(symbol),loadCharts()]); }
+    catch (error) { toast('委託已送出，但畫面更新失敗，請重新整理',false); }
   } else {
-    toast(data.message || data.error || '交易失敗', false);
+    document.getElementById('trade-error').textContent = data.message || data.error || '交易失敗';
   }
-  } catch (error) { toast('連線失敗，請重新整理並檢查交易紀錄', false); }
-  finally { trading = false; }
-}
+  } catch (error) { document.getElementById('trade-error').textContent='連線失敗，請重新整理並檢查交易紀錄，避免重複下單'; }
+  finally { trading = false; document.getElementById('submit-trade').disabled=false; }
+});
 
 async function cancel(id) {
   if (trading) return;
@@ -215,22 +247,34 @@ async function showBook(symbol) {
   if(!data.ok){toast(data.message || '無法取得委託簿',false);return;}
   selectedSymbol=symbol;
   document.getElementById('book-symbol').textContent=stockNames[symbol] || symbol;
-  showChart(symbol);
   const rows=Array.from({length:5},(_,i)=>{const b=data.bids[i],a=data.asks[i];return '<tr><td>'+ (b?fmt(b.price):'—') +'</td><td>'+ (b?fmt(b.quantity):'—') +'</td><td>'+ (a?fmt(a.price):'—') +'</td><td>'+ (a?fmt(a.quantity):'—') +'</td></tr>';});
   document.getElementById('book').innerHTML=rows.join('');
 }
 
-async function showChart(symbol) {
-  const response = await fetch('/api/history?symbol=' + encodeURIComponent(symbol));
-  const data = await response.json();
-  if (symbol !== selectedSymbol) return;
-  const svg = document.getElementById('chart');
-  document.getElementById('chart-name').textContent = stockNames[symbol] || symbol;
-  if (!data.ok) { svg.innerHTML = ''; document.getElementById('chart-note').textContent = '無法讀取走勢'; return; }
-  const points = data.history;
+async function loadCharts() {
+  const container=document.getElementById('charts');
+  try {
+    const response=await fetch('/api/histories');
+    const data=await response.json();
+    if (!response.ok || !data.ok) throw new Error('history unavailable');
+    container.replaceChildren();
+    for (const [symbol,points] of Object.entries(data.histories)) {
+      const card=document.createElement('section');
+      card.className='chart'; card.dataset.chartSymbol=symbol;
+      const title=document.createElement('h3'); title.textContent=stockNames[symbol] || symbol;
+      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('role','img'); svg.setAttribute('aria-label',title.textContent+'最近六小時成交價格走勢');
+      const note=document.createElement('div'); note.className='chart-note';
+      card.append(title,svg,note); container.append(card);
+      renderChart(svg,note,points);
+    }
+  } catch (error) { container.textContent='無法讀取價格走勢，請重新整理。'; }
+}
+
+function renderChart(svg,note,points) {
   if (points.length < 2) {
     svg.innerHTML = '';
-    document.getElementById('chart-note').textContent = points.length ? '目前只有一筆成交，等待更多成交後顯示走勢。' : '最近六小時沒有成交紀錄，等待成交後顯示走勢。';
+    note.textContent = points.length ? '目前只有一筆成交，等待更多成交後顯示走勢。' : '最近六小時沒有成交紀錄，等待成交後顯示走勢。';
     return;
   }
   const prices = points.map(p => Number(p.price));
@@ -240,11 +284,11 @@ async function showChart(symbol) {
   const coords = prices.map((price,i) => (20 + (duration ? (times[i]-start)/duration : i/(prices.length-1))*760).toFixed(1) + ',' + (160-(price-min)/span*130).toFixed(1)).join(' ');
   svg.setAttribute('viewBox','0 0 800 180');
   svg.innerHTML = '<polyline fill="none" stroke="#60a5fa" stroke-width="3" points="' + coords + '" />';
-  document.getElementById('chart-note').textContent = '最近六小時成交價（最多 500 筆）：最低 ' + fmt(min) + '，最高 ' + fmt(max) + '；沒有成交時不產生新價格。';
+  note.textContent = '最近六小時成交價（最多 500 筆）：最低 ' + fmt(min) + '，最高 ' + fmt(max) + '；沒有成交時不產生新價格。';
 }
 
-load().then(()=>showBook('2330'));
-setInterval(()=>{if(!document.hidden)load().then(()=>{if(selectedSymbol)showBook(selectedSymbol);});},15000);
+load().then(()=>Promise.all([showBook('2330'),loadCharts()]));
+setInterval(()=>{if(!document.hidden)load().then(()=>Promise.all([showBook(selectedSymbol),loadCharts()]));},15000);
 </script>
 </body>
 </html>`;
