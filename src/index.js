@@ -9,7 +9,7 @@ import { executeTrade } from "./domain/trading.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
 import { PAGE_HTML } from "./page.js";
-import { book, placeMarketOrder } from './domain/orders.js';
+import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed } from './domain/orders.js';
 import { maybeTick } from './domain/marketMaker.js';
 
 const DEFAULT_TRADE_LIMIT = 20;
@@ -31,10 +31,27 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   const upgraded = path.startsWith('/api/') && await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
-  if (upgraded) await maybeTick(env.DB);
+  if (upgraded) { await maybeTick(env.DB); await matchCrossed(env.DB); }
+
+  if (path === '/api/history' && request.method === 'GET') {
+    const symbol = url.searchParams.get('symbol') || '';
+    const stock = await env.DB.prepare('SELECT symbol, price FROM stocks WHERE symbol=?').bind(symbol).first();
+    if (!stock) return fail('NOT_FOUND', '沒有這檔股票');
+    const rows = await env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(symbol).all();
+    return ok({ stock, history: rows.results.reverse() });
+  }
 
   if (path === '/api/orderbook' && request.method === 'GET') {
     const result=await book(env.DB,url.searchParams.get('symbol')??'');
+    return result.ok ? ok(result) : fail(result.code,result.message);
+  }
+  if (path === '/api/orders' && request.method === 'GET') {
+    const result=await listOrders(env.DB,Number(url.searchParams.get('id') || 1));
+    return result.ok ? ok(result) : fail(result.code,result.message);
+  }
+  const cancelMatch=path.match(/^\/api\/orders\/(\d+)$/);
+  if (cancelMatch && request.method === 'DELETE') {
+    const result=await cancelOrder(env.DB,Number(url.searchParams.get('account_id') || 1),Number(cancelMatch[1]));
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
   if (path === '/api/orders' && request.method === 'POST') {

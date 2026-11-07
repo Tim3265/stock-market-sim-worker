@@ -6,6 +6,69 @@ async function get(path){const r=await SELF.fetch(base+path);return {status:r.st
 async function order(data){const r=await SELF.fetch(base+'/api/orders',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});return {status:r.status,body:await r.json()};}
 beforeEach(async()=>{await env.DB.batch(env.ORDERBOOK_MIGRATIONS[0].queries.map(sql=>env.DB.prepare(sql)));});
 describe('Sprint 2: 市價單及造市商',()=>{
+ it('走勢只提供該股票最近六小時的真實成交紀錄，依時間順序回傳',async()=>{
+  await env.DB.prepare("INSERT INTO price_history(symbol,price,source,created_at) VALUES ('2330',900,'TRADE',datetime('now','-7 hours')),('2330',975,'TRADE',datetime('now','-5 minutes')),('2330',980,'TRADE',datetime('now','-1 minute')),('YZU',45,'TRADE',datetime('now'))").run();
+  const r=await get('/api/history?symbol=2330');
+  expect(r.status).toBe(200);
+  expect(r.body.history.map(point=>point.price)).toEqual([975,980]);
+  expect((await get('/api/history?symbol=missing')).status).toBe(404);
+ });
+ it('限價買單未成交時凍結資金，取消後釋放',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  const placed=await order({account_id:1,symbol:'YZU',side:'BUY',type:'LIMIT',price:41,shares:10,request_id:'limit-buy-test-0001'});
+  expect(placed.body).toMatchObject({status:'OPEN',filledShares:0,remaining:10});
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:410});
+  expect((await get('/api/orders?id=1')).body.orders[0]).toMatchObject({status:'OPEN',price:41});
+  const response=await SELF.fetch(base+'/api/orders/'+placed.body.orderId+'?account_id=1',{method:'DELETE'});
+  expect(response.status).toBe(200);
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:0});
+ });
+ it('限價單跨價成交後只凍結剩餘股數，另一位玩家可成交它',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(2,'乙',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares) VALUES(2,'YZU',10)").run();
+  const buy=await order({account_id:1,symbol:'YZU',side:'BUY',type:'LIMIT',price:44,shares:10,request_id:'resting-buy-test-01'});
+  expect(buy.body.status).toBe('OPEN');
+  await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
+  const sell=await order({account_id:2,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:5,request_id:'resting-sell-test-1'});
+  expect(sell.body).toMatchObject({status:'FILLED',filledShares:5});
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:220});
+  const playerOrders=await get('/api/orders?id=1');
+  expect(playerOrders.body.orders[0]).toMatchObject({status:'PARTIAL',filled_shares:5});
+ });
+ it('造市商重新報價穿過玩家限價時，會成交並釋放剩餘凍結資金',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  const buy=await order({account_id:1,symbol:'YZU',side:'BUY',type:'LIMIT',price:44,shares:10,request_id:'requote-player-0001'});
+  expect(buy.body.status).toBe('OPEN');
+  await env.DB.prepare("UPDATE orders SET price=43 WHERE id=(SELECT id FROM orders WHERE account_id=1000000 AND symbol='YZU' AND side='SELL' AND status='OPEN' ORDER BY id LIMIT 1)").run();
+  const result=await get('/api/orders?id=1');
+  expect(result.body.orders[0]).toMatchObject({status:'FILLED',filled_shares:10});
+  expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=1').first()).toEqual({cash:99570,frozen_cash:0});
+  expect((await get('/api/history?symbol=YZU')).body.history.at(-1).price).toBe(43);
+ });
+ it('限價賣單凍結持股，不能重複出售，取消後能再次使用',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await order({account_id:1,symbol:'YZU',side:'BUY',shares:10,request_id:'sell-limit-buy-0001'});
+  const sell=await order({account_id:1,symbol:'YZU',side:'SELL',type:'LIMIT',price:49,shares:10,request_id:'sell-limit-open-001'});
+  expect(sell.body.status).toBe('OPEN');
+  expect((await order({account_id:1,symbol:'YZU',side:'SELL',shares:1,request_id:'sell-limit-again-01'})).body.code).toBe('INSUFFICIENT_SHARES');
+  expect(await env.DB.prepare("SELECT shares,frozen_shares FROM holdings WHERE account_id=1 AND symbol='YZU'").first()).toEqual({shares:10,frozen_shares:10});
+  expect((await SELF.fetch(base+'/api/orders/'+sell.body.orderId+'?account_id=1',{method:'DELETE'})).status).toBe(200);
+  expect(await env.DB.prepare("SELECT shares,frozen_shares FROM holdings WHERE account_id=1 AND symbol='YZU'").first()).toEqual({shares:10,frozen_shares:0});
+ });
+ it('同時取消與對手下單不會重複釋放資金或憑空增加股份',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(2,'乙',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares) VALUES(2,'YZU',10)").run();
+  const buy=await order({account_id:1,symbol:'YZU',side:'BUY',type:'LIMIT',price:44,shares:10,request_id:'race-limit-buy-001'});
+  await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
+  await Promise.all([SELF.fetch(base+'/api/orders/'+buy.body.orderId+'?account_id=1',{method:'DELETE'}),order({account_id:2,symbol:'YZU',side:'SELL',shares:10,request_id:'race-limit-sell-01'})]);
+  const state=await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=1').first();
+  expect(state.frozen_cash).toBe(0);
+  expect(state.cash).toBeGreaterThanOrEqual(99560);
+  expect(state.cash).toBeLessThanOrEqual(100000);
+  expect((await env.DB.prepare("SELECT SUM(shares) total FROM holdings WHERE account_id IN (1,2) AND symbol='YZU'").first()).total).toBe(10);
+ });
  it('造市商產生買賣五檔，玩家買入並以掛單價交割',async()=>{
   const book=await get('/api/orderbook?symbol=2330');
   expect(book.status).toBe(200);expect(book.body.asks.length).toBeGreaterThan(0);
@@ -75,6 +138,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
  });
  it('多檔價格優先、同價先到先成交，成交價採掛單價',async()=>{
   await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
   await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(10,'甲',100,100),(11,'乙',100,100),(12,'丙',100,100)").run();
   for(const id of [10,11,12]) await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares,frozen_shares) VALUES(?,'YZU',10,10)").bind(id).run();
   for(const [id,price] of [[10,44],[11,43],[12,43]])await env.DB.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status) VALUES(?,'YZU','SELL','LIMIT',?,10,'OPEN')").bind(id,price).run();
