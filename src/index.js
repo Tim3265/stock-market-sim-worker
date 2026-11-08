@@ -32,6 +32,8 @@ export default {
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
+  const upgraded = path.startsWith('/api/') && await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
+  if (upgraded) { await maybeTick(env.DB); await matchCrossed(env.DB); await runBotActivity(env.DB); }
   if (path.startsWith('/api/') && !['GET','HEAD'].includes(request.method)) {
     const origin=request.headers.get('Origin');
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
@@ -113,7 +115,6 @@ async function route(request, env) {
     return ok({ fills });
   }
   if (path === '/api/tick' && request.method === 'POST') {
-    const upgraded = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
     if (upgraded) {
       await maybeTick(env.DB, Date.now() + 5000);
       await matchCrossed(env.DB);
@@ -146,8 +147,6 @@ async function route(request, env) {
   const protectedPath=path==='/api/account'||path==='/api/trades'||path==='/api/trade'||path==='/api/orders'||/^\/api\/orders\/\d+$/.test(path);
   const current=protectedPath?await auth.session(env.DB,request):null;
   if(protectedPath&&!current)return Response.json({ok:false,code:'UNAUTHENTICATED',message:'請先登入'},{status:401});
-  const upgraded = path.startsWith('/api/') && await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
-  if (upgraded) { await maybeTick(env.DB); await matchCrossed(env.DB); await runBotActivity(env.DB); }
 
   if (path === '/api/histories' && request.method === 'GET') {
     const stocks = (await env.DB.prepare("SELECT symbol FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
