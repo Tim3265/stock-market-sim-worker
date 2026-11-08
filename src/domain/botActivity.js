@@ -15,6 +15,14 @@ export async function runBotActivity(db){
  }
  const stock=await db.prepare('SELECT price,fair_price FROM stocks WHERE symbol=?').bind(symbol).first();
  if(!stock)return;
+ if(tick > 2 && tick % 2 === 1){
+  const noiseSymbol = symbols[tick % symbols.length];
+  const noiseSide = (tick % 4 < 2) ? 'BUY' : 'SELL';
+  const noiseStock = await db.prepare('SELECT price FROM stocks WHERE symbol=?').bind(noiseSymbol).first();
+  if(noiseStock){
+   await submit(1000001, noiseSide, 2, 'MARKET', null, 'retail', noiseSymbol);
+  }
+ }
  if(tick%2===0)await submit(1000001,side,1);
  if(tick%6===0){
   const history=(await db.prepare('SELECT price FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 5').bind(symbol).all()).results.reverse().map(x=>Number(x.price));
