@@ -36,6 +36,42 @@ async function route(request, env) {
     const origin=request.headers.get('Origin');
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
   }
+  if (path === '/api/auth/guest' && request.method === 'POST') {
+    const input = await request.json().catch(() => ({}));
+    const result = await auth.guestLogin(env.DB, input.nickname);
+    const secure = url.protocol === 'https:' ? '; Secure' : '';
+    return Response.json({ ok: true, username: result.username }, {
+      headers: { 'Set-Cookie': 'stock_session=' + result.token + '; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000' + secure }
+    });
+  }
+  if (path === '/api/account/recharge' && request.method === 'POST') {
+    const current = await auth.session(env.DB, request);
+    if (!current) return Response.json({ ok: false }, { status: 401 });
+    await env.DB.prepare('UPDATE accounts SET cash=10000000, initial_cash=10000000 WHERE id=?').bind(current.account_id).run();
+    return ok({ message: '已充值千萬籌碼！' });
+  }
+  if (path === '/api/market-activity' && request.method === 'GET') {
+    const fills = (await env.DB.prepare(`
+      SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
+             b.name as buyer_name, b.is_bot as buyer_is_bot,
+             se.name as seller_name, se.is_bot as seller_is_bot
+      FROM order_fills f
+      JOIN stocks s ON s.symbol = f.symbol
+      JOIN accounts b ON b.id = f.buyer_id
+      JOIN accounts se ON se.id = f.seller_id
+      ORDER BY f.id DESC LIMIT 15
+    `).all()).results;
+    return ok({ fills });
+  }
+  if (path === '/api/tick' && request.method === 'POST') {
+    const upgraded = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
+    if (upgraded) {
+      await maybeTick(env.DB, Date.now() + 5000);
+      await matchCrossed(env.DB);
+      await runBotActivity(env.DB);
+    }
+    return ok({ message: 'tick processed' });
+  }
   if(path==='/api/auth/register' && request.method==='POST'){
     if(!await auth.allowAttempt(env.DB,request))return Response.json({ok:false,message:'操作太頻繁，請五分鐘後再試'},{status:429});
     const input=await request.json().catch(()=>({}));

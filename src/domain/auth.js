@@ -41,3 +41,20 @@ export async function logout(db,request){
  const token=(request.headers.get('Cookie')||'').match(/(?:^|;\s*)stock_session=([a-f0-9]{64})(?:;|$)/)?.[1];
  if(token)await db.prepare('DELETE FROM player_sessions WHERE token_hash=?').bind(await digest(token)).run();
 }
+
+export async function guestLogin(db, nickname) {
+ const rand = Math.floor(1000 + Math.random() * 9000);
+ const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 12) : '大戶_' + rand;
+ const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '') || ('Whale_' + rand);
+ const username = baseName.length > 18 ? baseName.slice(0, 18) + '_' + rand : baseName;
+ const salt = randomHex(16), hash = await derive('guest-token-' + rand, salt);
+ const id = 10000000 + crypto.getRandomValues(new Uint32Array(1))[0];
+ const initialCash = 10000000;
+ await db.batch([
+  db.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,?,?)').bind(id, username, initialCash, initialCash),
+  db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash) VALUES(?,?,?,?)').bind(id, username, salt, hash)
+ ]);
+ const token = randomHex(32), tokenHash = await digest(token), expires = Date.now() + 30 * 86400000;
+ await db.prepare('INSERT INTO player_sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').bind(tokenHash, id, expires).run();
+ return { token, accountId: id, username };
+}
