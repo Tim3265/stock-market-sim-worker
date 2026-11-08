@@ -36,14 +36,14 @@ export const PAGE_HTML = `<!doctype html>
   .tag { font-size:11px; padding:2px 7px; border-radius:999px; }
   .tag.BUY { background:#1e3a8a; color:#bfdbfe; }
   .tag.SELL { background:#7f1d1d; color:#fecaca; }
-  .pos { color:#4ade80; } .neg { color:#f87171; }
+  .pos { color:#f87171; } .neg { color:#4ade80; }
   #msg { position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
          padding:10px 18px; border-radius:8px; font-size:13.5px; opacity:0;
          transition:opacity .2s; pointer-events:none; }
   #msg.show { opacity:1; }
   #msg.ok { background:#14532d; color:#dcfce7; }
   #msg.err { background:#7f1d1d; color:#fee2e2; }
-  .empty { color:#5b6478; font-size:13px; padding:14px 12px; }
+  .empty { color:#aab2c5; font-size:13px; padding:14px 12px; }
   .chart { background:#171a21; border:1px solid #252a35; border-radius:10px; padding:16px; }
   .chart svg { display:block; width:100%; height:180px; }
   .chart-note { color:#aab2c5; font-size:12px; }
@@ -58,6 +58,17 @@ export const PAGE_HTML = `<!doctype html>
   .navigation { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; }
   .navigation button { background:#273044; padding:10px 16px; }
   .navigation button[aria-current="page"] { background:#2563eb; }
+  .table-wrap { width:100%; overflow-x:auto; }
+  .table-wrap table { min-width:520px; }
+  .table-wrap th,.table-wrap td { white-space:nowrap; }
+  button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid #60a5fa; outline-offset:2px; }
+  #auth-form label { display:block; margin:12px 0 5px; }
+  #auth-form input,dialog input,dialog select { min-height:44px; font-size:16px; width:100%; border:1px solid #46516a; border-radius:6px; background:#0f1115; color:#fff; padding:10px; }
+  #auth-form button { margin-top:14px; }
+  #data-status { padding:10px 12px; margin:12px 0; background:#482b12; border-radius:8px; }
+  #trade-summary { padding:12px; background:#202735; border-radius:8px; line-height:1.7; }
+  #msg { z-index:20; width:min(520px,calc(100vw - 32px)); pointer-events:auto; }
+  @media(max-width:640px) { body { padding:12px; } button { min-height:44px; } .navigation { display:grid; grid-template-columns:repeat(2,1fr); } .navigation button { margin:0; } }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -73,6 +84,8 @@ export const PAGE_HTML = `<!doctype html>
   </div>
   <div id="app-panel" hidden>
   <p>登入帳號：<span id="username-label"></span> <button id="logout" type="button">登出</button></p>
+  <div id="data-status" role="status" hidden></div>
+  <p class="chart-note" id="last-refresh">資料載入中</p>
   <nav class="navigation" aria-label="主要選單"><button type="button" data-page="market" aria-current="page">行情</button><button type="button" data-page="trade">下單</button><button type="button" data-page="portfolio">我的資產</button><button type="button" data-page="ranking">排行榜</button></nav>
 
   <section id="page-portfolio" hidden>
@@ -85,7 +98,7 @@ export const PAGE_HTML = `<!doctype html>
   </section>
 
   <section id="page-trade" hidden>
-  <h2>行情</h2>
+  <h2>選擇股票下單</h2>
   <p class="chart-note">每筆成交手續費為成交金額的 0.1425%，向上計至 0.01；限價買單會多凍結預估手續費，未使用的金額會在成交或取消時釋放。</p>
   <table>
     <thead><tr>
@@ -129,20 +142,24 @@ export const PAGE_HTML = `<!doctype html>
 </div>
 </div>
 
-<div id="msg"></div>
+<div id="msg" role="status" aria-live="polite"></div>
 <dialog id="trade-dialog" aria-labelledby="trade-title">
   <form id="trade-form">
     <h2 id="trade-title"></h2>
-    <label for="trade-shares">交易股數</label>
+    <label for="trade-type">委託方式</label><select id="trade-type"><option value="MARKET">市價：依目前可成交價格買賣</option><option value="LIMIT">限價：只接受指定價格或更好</option></select>
+    <label for="trade-shares">交易股數（1 張 = 1,000 股）</label>
     <input id="trade-shares" type="number" min="1" step="1" required>
     <div id="price-field" hidden><label for="trade-price">每股限價</label><input id="trade-price" type="number" min="0.01" step="0.01"></div>
+    <div id="trade-summary" aria-live="polite"></div>
     <p id="trade-error" class="dialog-error" role="status"></p>
     <div class="dialog-actions"><button class="buy" type="submit" id="submit-trade">確認下單</button><button type="button" id="cancel-trade">取消</button></div>
   </form>
 </dialog>
+<dialog id="cancel-dialog" aria-labelledby="cancel-title"><h2 id="cancel-title">確定取消這筆委託？</h2><p>取消後，等待中的股數將不再排隊成交。</p><button type="button" id="confirm-cancel" class="sell">確認取消委託</button><button type="button" id="keep-order">保留委託</button></dialog>
 
 <script>
 const fmt = n => Number(n).toLocaleString('zh-TW', { maximumFractionDigits: 2 });
+document.querySelectorAll('table').forEach(table=>{const wrap=document.createElement('div');wrap.className='table-wrap';table.before(wrap);wrap.append(table);});
 let trading = false;
 function setTrading(value){
   trading=value;
@@ -151,6 +168,10 @@ function setTrading(value){
 let selectedSymbol = '2330';
 let stockNames = {};
 let stockPrices = {};
+let stockReferences = {};
+let availableCash = 0;
+let availableShares = {};
+let appliedFilters={symbol:'',side:'',from:'',to:''};
 let tradeIntent = null;
 let signedIn=false;
 let tradeOffset=0,hasMoreTrades=false;
@@ -170,7 +191,7 @@ async function authAction(action){
   if(!data.ok){message.textContent=data.message || '操作失敗';return;}
   if(action==='register'){message.textContent='註冊成功，請登入';return;}
   document.getElementById('password').value='';await refreshSession();
- }catch(e){message.textContent='連線失敗，請稍後再試';}
+ }catch(e){if(signedIn){const status=document.getElementById('data-status');status.textContent='登入成功，但資料更新失敗，請檢查網路並重新整理。';status.hidden=false;}else message.textContent='連線失敗，請稍後再試';}
 }
 document.getElementById('auth-form').addEventListener('submit',event=>{event.preventDefault();authAction('login');});
 document.getElementById('register').addEventListener('click',()=>authAction('register'));
@@ -180,20 +201,25 @@ document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener
   for(const [id,visible] of [['market',page==='market'],['trade',page==='trade'],['orders',page==='trade'],['portfolio',page==='portfolio'],['holdings',page==='portfolio'],['ranking',page==='ranking']]) document.getElementById('page-'+id).hidden=!visible;
   document.querySelectorAll('[data-page]').forEach(item=>{if(item===button)item.setAttribute('aria-current','page');else item.removeAttribute('aria-current');});
 }));
-document.getElementById('filter-apply').addEventListener('click',()=>{tradeOffset=0;load();});
-document.getElementById('trades-prev').addEventListener('click',()=>{tradeOffset=Math.max(0,tradeOffset-20);load();});
-document.getElementById('trades-next').addEventListener('click',()=>{if(hasMoreTrades){tradeOffset+=20;load();}});
+document.getElementById('filter-apply').addEventListener('click',()=>{for(const key of Object.keys(appliedFilters))appliedFilters[key]=document.getElementById('filter-'+key).value;tradeOffset=0;safeLoad();});
+document.getElementById('trades-prev').addEventListener('click',()=>{tradeOffset=Math.max(0,tradeOffset-20);safeLoad();});
+document.getElementById('trades-next').addEventListener('click',()=>{if(hasMoreTrades){tradeOffset+=20;safeLoad();}});
 
 function toast(text, ok) {
   const el = document.getElementById('msg');
   el.textContent = text;
   el.className = 'show ' + (ok ? 'ok' : 'err');
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => { el.className = ''; }, 2200);
+  toast.t = setTimeout(() => { el.className = ''; }, 10000);
+}
+
+async function safeLoad(){
+ try { await load(); document.getElementById('data-status').hidden=true; }
+ catch(error){const status=document.getElementById('data-status');status.textContent='資料更新失敗，畫面可能不是最新資料。請檢查網路並重新整理。';status.hidden=false;}
 }
 
 async function load() {
-  const filters=new URLSearchParams({limit:'20',offset:String(tradeOffset),symbol:document.getElementById('filter-symbol').value,side:document.getElementById('filter-side').value,from:document.getElementById('filter-from').value,to:document.getElementById('filter-to').value});
+  const filters=new URLSearchParams({limit:'20',offset:String(tradeOffset),...appliedFilters});
   const [stocksRes, acc, tr, orders, ranking] = await Promise.all([
     fetch('/api/stocks').then(r => r.json()),
     fetch('/api/account').then(r => r.json()),
@@ -201,10 +227,15 @@ async function load() {
     fetch('/api/orders').then(r => r.json()),
     fetch('/api/leaderboard').then(r => r.json())
   ]);
+  if(!stocksRes.ok || !acc.ok || !tr.ok || !orders.ok || !ranking.ok) throw new Error('refresh failed');
+  document.getElementById('last-refresh').textContent='最後更新 '+new Date().toLocaleTimeString('zh-TW',{hour12:false})+' · 股價為最近成交價';
 
   const stocks = stocksRes.stocks ?? [];
   stockNames = Object.fromEntries(stocks.map(s => [s.symbol, s.nickname || s.name]));
   stockPrices = Object.fromEntries(stocks.map(s => [s.symbol, s.price]));
+  stockReferences = Object.fromEntries(stocks.map(s => [s.symbol, s.ref_price]));
+  availableCash=Number(orders.availableCash ?? 0);
+  availableShares=Object.fromEntries(acc.holdings.map(h=>[h.symbol,Number(h.shares)-Number(h.frozen_shares||0)]));
   const select=document.getElementById('filter-symbol');
   if(select.options.length===1)for(const stock of stocks){const option=document.createElement('option');option.value=stock.symbol;option.textContent=stockNames[stock.symbol];select.append(option);}
   const ranks=document.getElementById('ranking');ranks.replaceChildren();
@@ -214,16 +245,14 @@ async function load() {
   document.getElementById('trades-prev').disabled=tradeOffset===0;
   document.getElementById('trades-next').disabled=!hasMoreTrades;
   const statusNames = {OPEN:'等待成交',PARTIAL:'部分成交',FILLED:'已成交',CANCELLED:'已取消'};
-  document.getElementById('orders').innerHTML = (orders.orders || []).map(o => '<tr><td>' + (stockNames[o.symbol] || o.symbol) + '</td><td>' + (o.side==='BUY'?'買進':'賣出') + '</td><td>' + (o.type==='LIMIT'?'限價':'市價') + '</td><td>' + (o.price == null?'市價':fmt(o.price)) + '</td><td>' + fmt(o.filled_shares) + ' / ' + fmt(o.shares) + '</td><td>' + (statusNames[o.status] || o.status) + '</td><td>' + (o.type==='LIMIT' && ['OPEN','PARTIAL'].includes(o.status) ? '<button class="sell" onclick="cancel(' + Number(o.id) + ')">取消</button>' : '') + '</td></tr>').join('') || '<tr><td colspan="7" class="empty">還沒有委託</td></tr>';
+  document.getElementById('orders').innerHTML = (orders.orders || []).map(o => '<tr><td>' + (stockNames[o.symbol] || o.symbol) + '</td><td>' + (o.side==='BUY'?'買進':'賣出') + '</td><td>' + (o.type==='LIMIT'?'限價':'市價') + '</td><td>' + (o.price == null?'市價':fmt(o.price)) + '</td><td>' + fmt(o.filled_shares) + ' / ' + fmt(o.shares) + '</td><td>' + (o.status==='CANCELLED'&&o.filled_shares>0?'部分成交後取消':statusNames[o.status] || o.status) + '</td><td>' + (o.type==='LIMIT' && ['OPEN','PARTIAL'].includes(o.status) ? '<button class="sell" onclick="cancel(' + Number(o.id) + ')">取消</button>' : '') + '</td></tr>').join('') || '<tr><td colspan="7" class="empty">還沒有委託</td></tr>';
   document.getElementById('rows').innerHTML = stocks.map(s => \`
     <tr>
       <td><button onclick="showBook('\${s.symbol}')">\${stockNames[s.symbol]}</button></td>
       <td class="num">\${fmt(s.price)}</td>
       <td>
-        <button class="buy" onclick="act('\${s.symbol}','BUY')">買進</button>
-        <button class="sell" onclick="act('\${s.symbol}','SELL')">賣出</button>
-        <button class="buy" onclick="act('\${s.symbol}','BUY',true)">限價買</button>
-        <button class="sell" onclick="act('\${s.symbol}','SELL',true)">限價賣</button>
+        <button class="buy" aria-label="\${stockNames[s.symbol]} 買進" onclick="act('\${s.symbol}','BUY')">買進</button>
+        <button class="sell" aria-label="\${stockNames[s.symbol]} 賣出" onclick="act('\${s.symbol}','SELL')">賣出</button>
       </td>
     </tr>\`).join('');
   setTrading(trading);
@@ -262,18 +291,38 @@ async function load() {
     : '<tr><td colspan="7" class="empty">還沒有交易</td></tr>';
 }
 
+function updateTradeSummary(){
+  if(!tradeIntent)return;
+  const {symbol,side}=tradeIntent,isLimit=document.getElementById('trade-type').value==='LIMIT';
+  tradeIntent.isLimit=isLimit;
+  document.getElementById('price-field').hidden=!isLimit;
+  const priceInput=document.getElementById('trade-price');priceInput.required=isLimit;
+  const qty=Number(document.getElementById('trade-shares').value),price=isLimit?Number(priceInput.value):Number(stockPrices[symbol]);
+  const ref=Number(stockReferences[symbol]),range=ref>0?' · 漲跌停 '+fmt(Math.ceil(Math.round(ref*100)*0.9)/100)+'～'+fmt(Math.floor(Math.round(ref*100)*1.1)/100):'';
+  const funds=side==='BUY'?'可用現金 '+fmt(availableCash)+' 元':'可賣 '+fmt(availableShares[symbol]||0)+' 股';
+  let result='最新成交價 '+fmt(stockPrices[symbol])+' 元'+range+'。'+funds+'。';
+  if(Number.isSafeInteger(qty)&&qty>0&&price>0){const gross=qty*price,fee=Math.ceil(Math.round(price*100)*qty*1425/1000000)/100;result+=' 以'+(isLimit?'限價':'最新成交價')+'估算金額 '+fmt(gross)+' 元，單筆預估手續費 '+fmt(fee)+' 元，預估'+(side==='BUY'?'支付 ':'收入 ')+fmt(side==='BUY'?gross+fee:gross-fee)+' 元。'; if(isLimit&&side==='BUY'){const unit=Math.round(price*100),reserve=(unit+Math.ceil(unit*1425/1000000))*qty/100;result+=' 掛單預計凍結 '+fmt(reserve)+' 元（含費用預留）。';}}
+  result+=isLimit?' 實際成交及凍結費用依委託簿為準。':' 市價可能不同於最新成交價；未成交股數會取消。';
+  document.getElementById('trade-summary').textContent=result;
+}
 function act(symbol, side, isLimit = false) {
   if (trading) return;
   const requestId=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');
   tradeIntent = {symbol,side,isLimit,requestId};
   document.getElementById('trade-title').textContent = (stockNames[symbol] || symbol) + ' · ' + (isLimit?'限價':'市價') + (side==='BUY'?'買進':'賣出');
-  document.getElementById('trade-shares').value = '10';
-  document.getElementById('trade-price').value = '';
+  document.getElementById('trade-shares').value = '';
+  document.getElementById('trade-type').value=isLimit?'LIMIT':'MARKET';
+  document.getElementById('trade-price').value = stockPrices[symbol] || '';
   document.getElementById('trade-price').required = isLimit;
   document.getElementById('price-field').hidden = !isLimit;
   document.getElementById('trade-error').textContent = '';
+  document.getElementById('submit-trade').textContent=side==='BUY'?'確認買進':'確認賣出';
+  document.getElementById('submit-trade').className=side==='BUY'?'buy':'sell';
+  updateTradeSummary();
+  showBook(symbol).catch(()=>{});
   document.getElementById('trade-dialog').showModal();
 }
+for(const id of ['trade-type','trade-shares','trade-price'])document.getElementById(id).addEventListener('input',updateTradeSummary);
 
 document.getElementById('cancel-trade').addEventListener('click',()=>document.getElementById('trade-dialog').close());
 document.getElementById('trade-form').addEventListener('submit',async event => {
@@ -296,7 +345,8 @@ document.getElementById('trade-form').addEventListener('submit',async event => {
   const data = await res.json();
   if (data.ok) {
     document.getElementById('trade-dialog').close();
-    toast('成交 ' + data.filledShares + ' 股，' + (isLimit?'等待成交 ':'未成交取消 ') + data.remaining + ' 股，金額 ' + fmt(data.amount) + '，手續費 ' + fmt(data.fee || 0), true);
+    const outcome=data.filledShares===0?(isLimit?'委託已送出，等待成交 '+data.remaining+' 股':'未成交，沒有可成交的對手，委託已取消'):(data.remaining?(isLimit?'部分成交，剩餘 '+data.remaining+' 股等待中':'部分成交，剩餘 '+data.remaining+' 股已取消'):'全部成交');
+    toast(outcome+'；成交 '+data.filledShares+' 股，金額 '+fmt(data.amount)+' 元，手續費 '+fmt(data.fee||0)+' 元',data.filledShares>0 || isLimit);
     try { await load(); await Promise.all([showBook(symbol),loadCharts()]); }
     catch (error) { toast('委託已送出，但畫面更新失敗，請重新整理',false); }
   } else {
@@ -306,7 +356,11 @@ document.getElementById('trade-form').addEventListener('submit',async event => {
   finally { setTrading(false); document.getElementById('submit-trade').disabled=false; }
 });
 
-async function cancel(id) {
+let cancelId=null;
+function cancel(id){cancelId=id;document.getElementById('cancel-dialog').showModal();}
+document.getElementById('keep-order').addEventListener('click',()=>document.getElementById('cancel-dialog').close());
+document.getElementById('confirm-cancel').addEventListener('click',()=>{document.getElementById('cancel-dialog').close();cancelOrder(cancelId);});
+async function cancelOrder(id) {
   if (trading) return;
   setTrading(true);
   try {
@@ -318,10 +372,11 @@ async function cancel(id) {
 }
 
 async function showBook(symbol) {
+  selectedSymbol=symbol;
   const r=await fetch('/api/orderbook?symbol='+encodeURIComponent(symbol));
   const data=await r.json();
+  if(symbol!==selectedSymbol)return;
   if(!data.ok){toast(data.message || '無法取得委託簿',false);return;}
-  selectedSymbol=symbol;
   document.getElementById('book-symbol').textContent=stockNames[symbol] || symbol;
   const rows=Array.from({length:5},(_,i)=>{const b=data.bids[i],a=data.asks[i];return '<tr><td>'+ (b?fmt(b.price):'—') +'</td><td>'+ (b?fmt(b.quantity):'—') +'</td><td>'+ (a?fmt(a.price):'—') +'</td><td>'+ (a?fmt(a.quantity):'—') +'</td></tr>';});
   document.getElementById('book').innerHTML=rows.join('');
@@ -360,11 +415,12 @@ function renderChart(svg,note,points) {
   const coords = prices.map((price,i) => (20 + (duration ? (times[i]-start)/duration : i/(prices.length-1))*760).toFixed(1) + ',' + (160-(price-min)/span*130).toFixed(1)).join(' ');
   svg.setAttribute('viewBox','0 0 800 180');
   svg.innerHTML = '<polyline fill="none" stroke="#60a5fa" stroke-width="3" points="' + coords + '" />';
-  note.textContent = '最近六小時成交價（最多 500 筆）：最低 ' + fmt(min) + '，最高 ' + fmt(max) + '；沒有成交時不產生新價格。';
+  const clock=t=>new Date(t).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
+  note.textContent = clock(times[0])+' 至 '+clock(times[times.length-1])+' · 最低 '+fmt(min)+'、最高 '+fmt(max)+'、最新 '+fmt(prices[prices.length-1])+' 元。只顯示真實成交（最多 500 筆）。';
 }
 
-refreshSession().catch(()=>{document.getElementById('auth-error').textContent='無法連線，請重新整理';});
-setInterval(()=>{if(signedIn&&!document.hidden)load().then(()=>Promise.all([showBook(selectedSymbol),loadCharts()]));},15000);
+refreshSession().catch(()=>{const el=document.getElementById(signedIn?'data-status':'auth-error');el.textContent='資料更新失敗，請檢查網路並重新整理';el.hidden=false;});
+setInterval(()=>{if(signedIn&&!document.hidden&&!trading&&!document.querySelector('dialog[open]')&&!document.querySelector('#rows :focus')&&!document.querySelector('#orders :focus'))safeLoad().then(()=>Promise.all([showBook(selectedSymbol),loadCharts()])).catch(()=>{});},15000);
 </script>
 </body>
 </html>`;

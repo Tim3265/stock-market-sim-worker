@@ -15,8 +15,8 @@ const assert=require('node:assert/strict');
   }
   const a=await makePlayer('a'),b=await makePlayer('b');
   await a.page.getByRole('button',{name:'下單',exact:true}).click();
-  await a.page.locator('#rows tr').filter({hasText:'右鍵'}).getByRole('button',{name:'買進',exact:true}).click();
-  await a.page.getByLabel('交易股數').fill('1');await a.page.getByRole('button',{name:'確認下單'}).click();
+  await a.page.locator('#rows tr').filter({hasText:'右鍵'}).getByRole('button',{name:'右鍵 買進'}).click();
+  await a.page.getByLabel('交易股數').fill('1');await a.page.getByRole('button',{name:'確認買進'}).click();
   await a.page.waitForFunction(()=>document.querySelector('#holdings').textContent.includes('右鍵'));
   await b.page.reload();await b.page.locator('#app-panel').waitFor();
   assert(!(await b.page.locator('#holdings').textContent()).includes('右鍵'));

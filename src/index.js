@@ -109,7 +109,7 @@ async function route(request, env) {
     return listStocks(env);
   }
   if (path === "/api/account" && request.method === "GET") {
-    return getAccount(env, current.account_id);
+    return getAccount(env, current.account_id, upgraded);
   }
   if (path === "/api/trades" && request.method === "GET") {
     return getTrades(env, url, current.account_id);
@@ -133,16 +133,21 @@ async function route(request, env) {
 // ---------- GET /api/stocks ----------
 async function listStocks(env) {
   let stocks = await queries.listStocks(env.DB);
-  if(await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first()) stocks=(await env.DB.prepare("SELECT symbol,name,nickname,price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
+  if(await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first()) stocks=(await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
   return ok({ stocks });
 }
 
 // ---------- GET /api/account?id=1 ----------
-async function getAccount(env, accountId) {
+async function getAccount(env, accountId, upgraded) {
   if (accountId === null) return fail("INVALID_INPUT", "帳戶編號錯誤");
 
   const result = await snapshot(env.DB, accountId);
   if (!result.ok) return fail(result.code, result.message);
+  if (upgraded) {
+    const frozen=(await env.DB.prepare('SELECT symbol,frozen_shares FROM holdings WHERE account_id=?').bind(accountId).all()).results;
+    const bySymbol=Object.fromEntries(frozen.map(row=>[row.symbol,row.frozen_shares]));
+    for(const holding of result.holdings)holding.frozen_shares=bySymbol[holding.symbol]||0;
+  }
 
   return ok({
     account: result.account,

@@ -30,6 +30,13 @@ describe('玩家登入和資料隔離',()=>{
   const own=await (await SELF.fetch(base+'/api/orders?id=1',{headers:{Cookie:b}})).json();expect(own.orders).toEqual([]);
   const original=await (await SELF.fetch(base+'/api/orders',{headers:{Cookie:a}})).json();expect(original.orders[0].status).toBe('OPEN');
  });
+ it('持股查詢顯示已凍結股數，供下單時顯示可賣數量',async()=>{
+  const player=await create('holdings');
+  const account=(await (await SELF.fetch(base+'/api/account',{headers:{Cookie:player}})).json()).account;
+  await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares,frozen_shares) VALUES(?,'YZU',10,4)").bind(account.id).run();
+  const result=await (await SELF.fetch(base+'/api/account',{headers:{Cookie:player}})).json();
+  expect(result.holdings.find(h=>h.symbol==='YZU')).toMatchObject({shares:10,frozen_shares:4});
+ });
  it('錯誤密碼被拒絕且登出後無法讀取資料',async()=>{
   const cookie=await create('player_c');
   expect((await post('/api/auth/login',{username:'player_c',password:'wrong-pass'})).status).toBe(401);
