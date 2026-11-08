@@ -4,12 +4,16 @@ const assert=require('node:assert/strict');
 (async()=>{
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
-  const page=await browser.newPage({viewport:{width:320,height:800},extraHTTPHeaders:{'CF-Connecting-IP':'test-'+Date.now()}});
+  const page=await browser.newPage({viewport:{width:Number(process.env.TEST_WIDTH||320),height:800},extraHTTPHeaders:{'CF-Connecting-IP':'test-'+Date.now()}});
   await page.goto('http://127.0.0.1:8789/');
   await page.locator('#username').fill('mob_'+Date.now());await page.locator('#password').fill('example-pass-123');
   await page.locator('#register').click();await page.waitForFunction(()=>document.querySelector('#auth-error').textContent.includes('註冊成功'));
   await page.getByRole('button',{name:'登入',exact:true}).click();await page.locator('#app-panel').waitFor();
   await page.waitForSelector('[data-chart-symbol]');
+  if(process.env.MARKET_SCREENSHOT_PATH)await page.screenshot({path:process.env.MARKET_SCREENSHOT_PATH,fullPage:true});
+  await page.getByRole('button',{name:'GG 行情買進'}).click();
+  assert((await page.locator('#trade-title').textContent()).includes('GG'));
+  await page.locator('#cancel-trade').click();
   for(const name of ['行情','下單','我的資產','排行榜']){
    await page.getByRole('button',{name,exact:true}).click();
    const width=await page.evaluate(()=>({scroll:document.documentElement.scrollWidth,viewport:window.innerWidth}));
@@ -32,6 +36,6 @@ const assert=require('node:assert/strict');
   await page.getByRole('button',{name:'我的資產',exact:true}).click();await page.locator('#filter-apply').click();
   await page.locator('#data-status').waitFor();
   assert((await page.locator('#data-status').textContent()).includes('更新失敗'));
-  console.log('PASS: 320px pages do not overflow; trade preview shows cost and market-price caveat');
+  console.log('PASS: '+(process.env.TEST_WIDTH||'320')+'px pages do not overflow; trade preview shows cost and market-price caveat');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
