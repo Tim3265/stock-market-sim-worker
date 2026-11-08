@@ -11,6 +11,8 @@ import { fail, ok } from "./http.js";
 import { PAGE_HTML } from "./page.js";
 import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed } from './domain/orders.js';
 import { maybeTick } from './domain/marketMaker.js';
+import * as auth from './domain/auth.js';
+import { runBotActivity } from './domain/botActivity.js';
 
 const DEFAULT_TRADE_LIMIT = 20;
 const MAX_TRADE_LIMIT = 100;
@@ -30,14 +32,50 @@ export default {
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
+  if (path.startsWith('/api/') && !['GET','HEAD'].includes(request.method)) {
+    const origin=request.headers.get('Origin');
+    if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
+  }
+  if(path==='/api/auth/register' && request.method==='POST'){
+    if(!await auth.allowAttempt(env.DB,request))return Response.json({ok:false,message:'操作太頻繁，請五分鐘後再試'},{status:429});
+    const input=await request.json().catch(()=>({}));
+    const result=await auth.register(env.DB,input.username,input.password);
+    return result.error?Response.json({ok:false,message:result.error},{status:400}):ok({username:result.username});
+  }
+  if(path==='/api/auth/login' && request.method==='POST'){
+    if(!await auth.allowAttempt(env.DB,request))return Response.json({ok:false,message:'操作太頻繁，請五分鐘後再試'},{status:429});
+    const input=await request.json().catch(()=>({}));
+    const result=await auth.login(env.DB,input.username,input.password);
+    if(!result)return Response.json({ok:false,message:'帳號或密碼錯誤'},{status:401});
+    const secure=url.protocol==='https:'?'; Secure':'';
+    return Response.json({ok:true,username:result.username},{headers:{'Set-Cookie':'stock_session='+result.token+'; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800'+secure}});
+  }
+  if(path==='/api/auth/logout' && request.method==='POST'){
+    await auth.logout(env.DB,request);
+    return Response.json({ok:true},{headers:{'Set-Cookie':'stock_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'}});
+  }
+  if(path==='/api/auth/session' && request.method==='GET'){
+    const current=await auth.session(env.DB,request);
+    return current?ok({username:current.username}):Response.json({ok:false},{status:401});
+  }
+  const protectedPath=path==='/api/account'||path==='/api/trades'||path==='/api/trade'||path==='/api/orders'||/^\/api\/orders\/\d+$/.test(path);
+  const current=protectedPath?await auth.session(env.DB,request):null;
+  if(protectedPath&&!current)return Response.json({ok:false,code:'UNAUTHENTICATED',message:'請先登入'},{status:401});
   const upgraded = path.startsWith('/api/') && await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
-  if (upgraded) { await maybeTick(env.DB); await matchCrossed(env.DB); }
+  if (upgraded) { await maybeTick(env.DB); await matchCrossed(env.DB); await runBotActivity(env.DB); }
 
   if (path === '/api/histories' && request.method === 'GET') {
     const stocks = (await env.DB.prepare("SELECT symbol FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
     const queries = stocks.map(stock => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(stock.symbol));
     const rows = queries.length ? await env.DB.batch(queries) : [];
     return ok({ histories: Object.fromEntries(stocks.map((stock,i)=>[stock.symbol,rows[i].results.reverse()])) });
+  }
+  if(path==='/api/leaderboard' && request.method==='GET'){
+    const rows=await env.DB.prepare(`SELECT c.username,ROUND(a.cash+COALESCE(SUM(h.shares*s.price),0),2) total_assets
+      FROM player_credentials c JOIN accounts a ON a.id=c.account_id
+      LEFT JOIN holdings h ON h.account_id=a.id LEFT JOIN stocks s ON s.symbol=h.symbol
+      GROUP BY a.id,c.username ORDER BY total_assets DESC,c.username LIMIT 100`).all();
+    return ok({players:rows.results});
   }
 
   if (path === '/api/history' && request.method === 'GET') {
@@ -53,17 +91,17 @@ async function route(request, env) {
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
   if (path === '/api/orders' && request.method === 'GET') {
-    const result=await listOrders(env.DB,Number(url.searchParams.get('id') || 1));
+    const result=await listOrders(env.DB,current.account_id);
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
   const cancelMatch=path.match(/^\/api\/orders\/(\d+)$/);
   if (cancelMatch && request.method === 'DELETE') {
-    const result=await cancelOrder(env.DB,Number(url.searchParams.get('account_id') || 1),Number(cancelMatch[1]));
+    const result=await cancelOrder(env.DB,current.account_id,Number(cancelMatch[1]));
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
   if (path === '/api/orders' && request.method === 'POST') {
     let input;try{input=await request.json();}catch{return fail('INVALID_INPUT','請求內容必須是 JSON');}
-    const result=await placeMarketOrder(env.DB,input);
+    const result=await placeMarketOrder(env.DB,{...input,account_id:current.account_id});
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
 
@@ -71,15 +109,14 @@ async function route(request, env) {
     return listStocks(env);
   }
   if (path === "/api/account" && request.method === "GET") {
-    return getAccount(env, url);
+    return getAccount(env, current.account_id);
   }
   if (path === "/api/trades" && request.method === "GET") {
-    return getTrades(env, url);
+    return getTrades(env, url, current.account_id);
   }
   if (path === "/api/trade" && request.method === "POST") {
     // The old direct-settlement route would bypass order-book reservations.
-    if (upgraded) return fail('INVALID_INPUT','請使用委託簿下單');
-    return postTrade(request, env);
+    return fail('INVALID_INPUT','請使用委託簿下單');
   }
 
   // 未知的 /api/* 要回 404 JSON，不要回網頁，
@@ -101,8 +138,7 @@ async function listStocks(env) {
 }
 
 // ---------- GET /api/account?id=1 ----------
-async function getAccount(env, url) {
-  const accountId = parsePositiveInt(url.searchParams.get("id"), 1);
+async function getAccount(env, accountId) {
   if (accountId === null) return fail("INVALID_INPUT", "帳戶編號錯誤");
 
   const result = await snapshot(env.DB, accountId);
@@ -116,8 +152,7 @@ async function getAccount(env, url) {
 }
 
 // ---------- GET /api/trades?id=1&limit=20 ----------
-async function getTrades(env, url) {
-  const accountId = parsePositiveInt(url.searchParams.get("id"), 1);
+async function getTrades(env, url, accountId) {
   if (accountId === null) return fail("INVALID_INPUT", "帳戶編號錯誤");
 
   const rawLimit = Number(url.searchParams.get("limit") ?? DEFAULT_TRADE_LIMIT);
@@ -125,8 +160,12 @@ async function getTrades(env, url) {
     ? Math.min(Math.max(Math.trunc(rawLimit), 1), MAX_TRADE_LIMIT)
     : DEFAULT_TRADE_LIMIT;
 
-  const trades = await queries.listTrades(env.DB, accountId, limit);
-  return ok({ trades });
+  const rawOffset=Number(url.searchParams.get('offset')||0);
+  const offset=Number.isSafeInteger(rawOffset)&&rawOffset>=0?Math.min(rawOffset,100000):0;
+  const symbol=url.searchParams.get('symbol')||'',side=url.searchParams.get('side')||'',from=url.searchParams.get('from')||'',to=url.searchParams.get('to')||'';
+  if((side&&!['BUY','SELL'].includes(side))||(from&&!/^\d{4}-\d{2}-\d{2}$/.test(from))||(to&&!/^\d{4}-\d{2}-\d{2}$/.test(to)))return fail('INVALID_INPUT','篩選條件錯誤');
+  const trades = await queries.listTrades(env.DB, accountId, limit+1, offset,{symbol,side,from,to});
+  return ok({ trades:trades.slice(0,limit),hasMore:trades.length>limit,offset });
 }
 
 // ---------- POST /api/trade ----------
