@@ -48,17 +48,18 @@ export async function listHoldings(db, accountId) {
 }
 
 // ---------- 交易紀錄 ----------
-export async function listTrades(db, accountId, limit) {
+export async function listTrades(db, accountId, limit, offset=0, filters={}) {
   const { results } = await db
     .prepare(
-      `SELECT t.id, t.symbol, s.name, t.side, t.shares, t.price, t.amount, t.created_at
+      `SELECT t.*, s.name
          FROM trades t
          JOIN stocks s ON s.symbol = t.symbol
-        WHERE t.account_id = ?
+        WHERE t.account_id = ? AND (? = '' OR t.symbol = ?) AND (? = '' OR t.side = ?)
+          AND (? = '' OR t.created_at >= datetime(?, '-8 hours')) AND (? = '' OR t.created_at < datetime(?, '+1 day', '-8 hours'))
         ORDER BY t.id DESC
-        LIMIT ?`
+        LIMIT ? OFFSET ?`
     )
-    .bind(accountId, limit)
+    .bind(accountId,filters.symbol||'',filters.symbol||'',filters.side||'',filters.side||'',filters.from||'',filters.from||'',filters.to||'',filters.to||'',limit,offset)
     .all();
   return results;
 }

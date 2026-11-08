@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { env } from "cloudflare:test";
 
 describe("委託簿資料庫升級", () => {
+  it('登入與手續費升級保留舊委託與凍結資金',async()=>{
+    await env.DB.batch(env.ORDERBOOK_MIGRATIONS[0].queries.map(sql=>env.DB.prepare(sql)));
+    await env.DB.prepare("UPDATE accounts SET frozen_cash=450 WHERE id=1").run();
+    await env.DB.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status) VALUES(1,'YZU','BUY','LIMIT',45,10,'OPEN')").run();
+    for(const migration of env.ORDERBOOK_MIGRATIONS.slice(1))await env.DB.batch(migration.queries.map(sql=>env.DB.prepare(sql)));
+    expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=1').first()).toEqual({cash:100000,frozen_cash:450});
+    expect(await env.DB.prepare("SELECT shares,status,fee_scheme FROM orders WHERE account_id=1").first()).toEqual({shares:10,status:'OPEN',fee_scheme:0});
+  });
   it("保留原有玩家、持股與交易，並建立空委託簿", async () => {
     await env.DB.prepare("UPDATE accounts SET cash=95000 WHERE id=1").run();
     await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares) VALUES(1,'2330',5)").run();

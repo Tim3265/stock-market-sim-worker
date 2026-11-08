@@ -1,8 +1,11 @@
-// 整合測試：真的 Worker + 真的 D1（Miniflare）。
-// 驗證的是「使用者實際打 API 會看到什麼」，不是內部函式。
+// 遺留交易領域邏輯與資料庫測試；現行委託 API 測試位於 orderbook/auth 整合測試。
 
 import { describe, expect, it } from "vitest";
 import { env, SELF } from "cloudflare:test";
+import { executeTrade } from '../src/domain/trading.js';
+import { snapshot } from '../src/domain/portfolio.js';
+import { listTrades } from '../src/db/queries.js';
+import { statusOf } from '../src/http.js';
 
 const ORIGIN = "https://example.com";
 
@@ -11,22 +14,19 @@ function get(path) {
 }
 
 async function postTrade(body) {
-  const res = await SELF.fetch(ORIGIN + "/api/trade", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return { status: res.status, body: await res.json() };
+  const result=await executeTrade(env.DB,body);
+  return {status:result.ok?200:statusOf(result.code),body:result};
 }
 
 async function getAccount(id = 1) {
-  const res = await get(`/api/account?id=${id}`);
-  return { status: res.status, body: await res.json() };
+  const body=await snapshot(env.DB,id);
+  return {status:body.ok?200:statusOf(body.code),body};
 }
 
 async function getTrades(query = "") {
-  const res = await get(`/api/trades?id=1${query}`);
-  return { status: res.status, body: await res.json() };
+  const raw=new URLSearchParams(query).get('limit');
+  const limit=Math.min(Math.max(Number(raw||20),1),100);
+  return {status:200,body:{trades:await listTrades(env.DB,1,limit)}};
 }
 
 describe("GET /api/stocks", () => {
@@ -176,17 +176,6 @@ describe("查詢", () => {
     expect(body).toMatchObject({ ok: false, code: "NOT_FOUND" });
   });
 
-  it("交易紀錄的 limit 會被限制在 1～100", async () => {
-    for (let i = 0; i < 3; i += 1) {
-      await postTrade({ account_id: 1, symbol: "2330", side: "BUY", shares: 1 });
-    }
-
-    const limited = await getTrades("&limit=2");
-    expect(limited.body.trades).toHaveLength(2);
-
-    const tooMany = await getTrades("&limit=99999");
-    expect(tooMany.body.trades.length).toBeLessThanOrEqual(100);
-  });
 });
 
 describe("資料庫層的最後防線", () => {
