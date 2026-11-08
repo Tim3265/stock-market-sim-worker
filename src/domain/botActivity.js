@@ -20,7 +20,8 @@ export async function runBotActivity(db){
   const noiseSide = (tick % 4 < 2) ? 'BUY' : 'SELL';
   const noiseStock = await db.prepare('SELECT price FROM stocks WHERE symbol=?').bind(noiseSymbol).first();
   if(noiseStock){
-   await submit(1000001, noiseSide, 2, 'MARKET', null, 'retail', noiseSymbol);
+   const noiseQty = (['YZU','YOUJIAN'].includes(noiseSymbol) ? 20 : 35) + (tick % 20);
+   await submit(1000001, noiseSide, noiseQty, 'MARKET', null, 'retail', noiseSymbol);
   }
  }
  if(tick%2===0)await submit(1000001,side,1);

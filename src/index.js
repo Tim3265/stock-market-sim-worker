@@ -50,6 +50,55 @@ async function route(request, env) {
     await env.DB.prepare('UPDATE accounts SET cash=10000000, initial_cash=10000000 WHERE id=?').bind(current.account_id).run();
     return ok({ message: '已充值千萬籌碼！' });
   }
+  if (path === '/api/live' && request.method === 'GET') {
+    const symbol = url.searchParams.get('symbol') || '2330';
+    let stocks = await queries.listStocks(env.DB);
+    if (upgraded) {
+      stocks = (await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
+    }
+    const session = await auth.session(env.DB, request);
+    let account = null, holdings = [], orders = [];
+    if (session) {
+      const snap = await snapshot(env.DB, session.account_id);
+      if (snap.ok) {
+        account = snap.account;
+        holdings = snap.holdings;
+        if (upgraded) {
+          const frozen = (await env.DB.prepare('SELECT symbol,frozen_shares FROM holdings WHERE account_id=?').bind(session.account_id).all()).results;
+          const bySymbol = Object.fromEntries(frozen.map(row => [row.symbol, row.frozen_shares]));
+          for (const h of holdings) h.frozen_shares = bySymbol[h.symbol] || 0;
+        }
+      }
+      const ordResult = await listOrders(env.DB, session.account_id);
+      if (ordResult.ok) orders = ordResult.orders;
+    }
+    const bookResult = await book(env.DB, symbol);
+    const fills = (await env.DB.prepare(`
+      SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
+             b.name as buyer_name, b.is_bot as buyer_is_bot,
+             se.name as seller_name, se.is_bot as seller_is_bot
+      FROM order_fills f
+      JOIN stocks s ON s.symbol = f.symbol
+      JOIN accounts b ON b.id = f.buyer_id
+      JOIN accounts se ON se.id = f.seller_id
+      ORDER BY f.id DESC LIMIT 10
+    `).all()).results;
+    const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
+    const queriesList = stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 100").bind(sym));
+    const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
+    const histories = Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()]));
+    return ok({
+      stocks,
+      account,
+      holdings,
+      orders,
+      bids: bookResult.bids || [],
+      asks: bookResult.asks || [],
+      fills,
+      histories,
+      username: session ? session.username : null
+    });
+  }
   if (path === '/api/market-activity' && request.method === 'GET') {
     const fills = (await env.DB.prepare(`
       SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
