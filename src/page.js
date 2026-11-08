@@ -54,19 +54,27 @@ export const PAGE_HTML = `<!doctype html>
   dialog input { width:100%; padding:10px; background:#0f1115; border:1px solid #46516a; border-radius:6px; color:#fff; }
   .dialog-actions { display:flex; gap:8px; margin-top:18px; }
   .dialog-error { color:#fca5a5; min-height:1.5em; }
+  .navigation { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; }
+  .navigation button { background:#273044; padding:10px 16px; }
+  .navigation button[aria-current="page"] { background:#2563eb; }
+  [hidden] { display:none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>股市模擬</h1>
+  <nav class="navigation" aria-label="主要選單"><button type="button" data-page="market" aria-current="page">行情</button><button type="button" data-page="trade">下單</button><button type="button" data-page="portfolio">我的資產</button></nav>
 
+  <section id="page-portfolio" hidden>
   <div class="cards">
     <div class="card"><div class="label">現金（含凍結）</div><div class="value" id="cash">—</div><div class="chart-note" id="available">可用 —</div></div>
     <div class="card"><div class="label">持股市值</div><div class="value" id="mv">—</div></div>
     <div class="card"><div class="label">總資產</div><div class="value" id="total">—</div></div>
     <div class="card"><div class="label">報酬率</div><div class="value" id="pct">—</div></div>
   </div>
+  </section>
 
+  <section id="page-trade" hidden>
   <h2>行情</h2>
   <table>
     <thead><tr>
@@ -74,13 +82,19 @@ export const PAGE_HTML = `<!doctype html>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
+  </section>
 
+  <section id="page-market">
   <h2>各公司價格走勢（最近六小時的成交價）</h2>
   <div id="charts" class="chart-grid"></div>
+  </section>
+  <section id="page-orders" hidden>
   <h2>委託簿 <small id="book-symbol">選擇股票</small></h2>
   <table><thead><tr><th>買價</th><th>買量</th><th>賣價</th><th>賣量</th></tr></thead><tbody id="book"></tbody></table>
   <h2>我的委託</h2>
   <table><thead><tr><th>股票</th><th>方向</th><th>類型</th><th>價格</th><th>成交 / 股數</th><th>狀態</th><th>操作</th></tr></thead><tbody id="orders"></tbody></table>
+  </section>
+  <section id="page-holdings" hidden>
   <h2>持股</h2>
   <table>
     <thead><tr>
@@ -89,7 +103,6 @@ export const PAGE_HTML = `<!doctype html>
     </tr></thead>
     <tbody id="holdings"></tbody>
   </table>
-
   <h2>交易紀錄</h2>
   <table>
     <thead><tr>
@@ -98,6 +111,7 @@ export const PAGE_HTML = `<!doctype html>
     </tr></thead>
     <tbody id="trades"></tbody>
   </table>
+  </section>
 </div>
 
 <div id="msg"></div>
@@ -118,7 +132,13 @@ const ACCOUNT = 1;
 let trading = false;
 let selectedSymbol = '2330';
 let stockNames = {};
+let stockPrices = {};
 let tradeIntent = null;
+document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>{
+  const page=button.dataset.page;
+  for(const [id,visible] of [['market',page==='market'],['trade',page==='trade'],['orders',page==='trade'],['portfolio',page==='portfolio'],['holdings',page==='portfolio']]) document.getElementById('page-'+id).hidden=!visible;
+  document.querySelectorAll('[data-page]').forEach(item=>{if(item===button)item.setAttribute('aria-current','page');else item.removeAttribute('aria-current');});
+}));
 
 function toast(text, ok) {
   const el = document.getElementById('msg');
@@ -138,6 +158,7 @@ async function load() {
 
   const stocks = stocksRes.stocks ?? [];
   stockNames = Object.fromEntries(stocks.map(s => [s.symbol, s.nickname || s.name]));
+  stockPrices = Object.fromEntries(stocks.map(s => [s.symbol, s.price]));
   const statusNames = {OPEN:'等待成交',PARTIAL:'部分成交',FILLED:'已成交',CANCELLED:'已取消'};
   document.getElementById('orders').innerHTML = (orders.orders || []).map(o => '<tr><td>' + (stockNames[o.symbol] || o.symbol) + '</td><td>' + (o.side==='BUY'?'買進':'賣出') + '</td><td>' + (o.type==='LIMIT'?'限價':'市價') + '</td><td>' + (o.price == null?'市價':fmt(o.price)) + '</td><td>' + fmt(o.filled_shares) + ' / ' + fmt(o.shares) + '</td><td>' + (statusNames[o.status] || o.status) + '</td><td>' + (o.type==='LIMIT' && ['OPEN','PARTIAL'].includes(o.status) ? '<button class="sell" onclick="cancel(' + Number(o.id) + ')">取消</button>' : '') + '</td></tr>').join('') || '<tr><td colspan="7" class="empty">還沒有委託</td></tr>';
   document.getElementById('rows').innerHTML = stocks.map(s => \`
@@ -261,7 +282,7 @@ async function loadCharts() {
     for (const [symbol,points] of Object.entries(data.histories)) {
       const card=document.createElement('section');
       card.className='chart'; card.dataset.chartSymbol=symbol;
-      const title=document.createElement('h3'); title.textContent=stockNames[symbol] || symbol;
+      const title=document.createElement('h3'); title.textContent=(stockNames[symbol] || symbol) + '　' + fmt(stockPrices[symbol]);
       const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
       svg.setAttribute('role','img'); svg.setAttribute('aria-label',title.textContent+'最近六小時成交價格走勢');
       const note=document.createElement('div'); note.className='chart-note';
