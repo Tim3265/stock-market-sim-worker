@@ -69,12 +69,71 @@ export const PAGE_HTML = `<!doctype html>
   #trade-summary { padding:12px; background:#202735; border-radius:8px; line-height:1.7; }
   #msg { z-index:20; width:min(520px,calc(100vw - 32px)); pointer-events:auto; }
   @media(max-width:640px) { body { padding:12px; } button { min-height:44px; } .navigation { display:grid; grid-template-columns:repeat(2,1fr); } .navigation button { margin:0; } }
+  /* A calm, light trading workspace with one strong accent. */
+  :root { color-scheme:light; --ink:#17201a; --muted:#68736c; --line:#e7ebe7; --accent:#c7f46b; }
+  body { background:#fafbf9; color:var(--ink); padding:0 28px 56px; }
+  .wrap { max-width:1160px; }
+  h1 { font-size:22px; font-weight:800; letter-spacing:-.05em; margin:0; }
+  h2 { color:var(--ink); font-weight:700; font-size:18px; letter-spacing:-.03em; margin:34px 0 16px; }
+  .site-header { display:flex; align-items:center; gap:12px; padding:26px 0; border-bottom:1px solid var(--line); }
+  .brand-mark { display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background:var(--accent); color:#182310; font-weight:900; }
+  .brand-caption { color:var(--muted); font-size:12px; letter-spacing:.04em; }
+  #app-panel > p:first-child { color:var(--muted); font-size:13px; text-align:right; margin:12px 0 0; }
+  #logout { color:var(--ink); background:transparent; text-decoration:underline; }
+  .navigation { gap:28px; margin:0 0 30px; border-bottom:1px solid var(--line); }
+  .navigation button { background:transparent; border-radius:0; color:var(--muted); padding:16px 0; font-size:14px; font-weight:650; margin:0; border-bottom:2px solid transparent; }
+  .navigation button[aria-current="page"] { background:transparent; color:var(--ink); border-color:var(--ink); }
+  .cards { gap:14px; }
+  .card,.chart { background:#fff; border:1px solid var(--line); border-radius:16px; box-shadow:0 8px 25px rgba(20,35,22,.035); }
+  .card { padding:22px; }
+  .card .label,.chart-note { color:var(--muted); }
+  .card .value { color:var(--ink); font-size:25px; letter-spacing:-.04em; }
+  .chart { padding:22px; }
+  .chart h3 { font-size:18px; letter-spacing:-.03em; }
+  .chart-price { font-size:27px; font-weight:750; letter-spacing:-.04em; margin:2px 0; }
+  .chart.no-history svg { height:70px; border-bottom:1px dashed #dce4dc; margin-bottom:12px; }
+  .chart-action { margin:14px 0 0; background:transparent; border:1px solid #dce4dc; }
+  .chart svg { height:145px; }
+  .chart-grid { gap:16px; }
+  table { background:#fff; border:1px solid var(--line); border-radius:14px; }
+  th,td { border-color:var(--line); padding:14px 16px; font-size:14px; }
+  th { color:var(--muted); }
+  button { color:var(--ink); background:#eef1ed; font-size:14px; font-weight:650; padding:9px 15px; border-radius:999px; }
+  button:hover { filter:brightness(.96); }
+  .buy,.buy:hover { background:var(--accent); color:#172014; }
+  .sell,.sell:hover { background:#e9eeeb; color:#18221b; }
+  .tag.BUY { background:#e9f9cf; color:#285412; }
+  .tag.SELL { background:#edf1ee; color:#46534a; }
+  .pos { color:#d34242; } .neg { color:#13804c; }
+  .empty { color:var(--muted); }
+  #data-status { background:#fff5dd; color:#70490b; }
+  #auth-panel { max-width:460px; margin:8vh auto; padding:32px; }
+  #auth-panel h2 { font-size:28px; margin:0 0 10px; }
+  #auth-form input,dialog input,dialog select { background:#f6f8f5; color:var(--ink); border:1px solid #dce3dc; }
+  #auth-form input:focus,dialog input:focus,dialog select:focus { border-color:#577f28; }
+  dialog { background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:20px; box-shadow:0 24px 80px rgba(0,0,0,.2); padding:26px; }
+  dialog h2 { font-size:22px; margin:0 0 18px; }
+  #trade-summary { background:#f5f8f2; color:#354237; }
+  .summary-row { display:flex; justify-content:space-between; gap:12px; padding:3px 0; font-size:13px; }
+  .summary-row span:first-child { color:#68736c; }
+  .summary-note { color:#68736c; font-size:12px; line-height:1.45; margin:9px 0 0; }
+  .dialog-error { color:#ba2929; }
+  #msg.ok { background:#1e3020; color:#fff; } #msg.err { background:#8f2828; color:#fff; }
+  @media(max-width:640px) {
+    body { padding:0 16px 40px; }
+    .site-header { padding:18px 0; }
+    .navigation { display:flex; gap:20px; overflow-x:auto; white-space:nowrap; margin-bottom:18px; }
+    .navigation button { flex:none; padding:12px 0; }
+    .chart-grid { grid-template-columns:1fr; }
+    .chart { padding:18px; }
+    #auth-panel { margin:24px 0; padding:24px; }
+  }
   [hidden] { display:none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>股市模擬</h1>
+  <header class="site-header"><span class="brand-mark" aria-hidden="true">小</span><div><h1>小市場</h1><div class="brand-caption">STOCK MARKET SIMULATOR</div></div></header>
   <div id="auth-panel" class="card">
     <h2>登入或註冊</h2>
     <p class="chart-note">首次使用請註冊：帳號使用 3～24 個英文字母、數字或底線；密碼至少 8 個字元。</p>
@@ -109,7 +168,7 @@ export const PAGE_HTML = `<!doctype html>
   </section>
 
   <section id="page-market">
-  <h2>各公司價格走勢（最近六小時的成交價）</h2>
+  <h2>市場行情</h2><p class="chart-note">探索六間公司 · 圖表顯示最近六小時的實際成交</p>
   <div id="charts" class="chart-grid"></div>
   </section>
   <section id="page-orders" hidden>
@@ -298,12 +357,14 @@ function updateTradeSummary(){
   document.getElementById('price-field').hidden=!isLimit;
   const priceInput=document.getElementById('trade-price');priceInput.required=isLimit;
   const qty=Number(document.getElementById('trade-shares').value),price=isLimit?Number(priceInput.value):Number(stockPrices[symbol]);
-  const ref=Number(stockReferences[symbol]),range=ref>0?' · 漲跌停 '+fmt(Math.ceil(Math.round(ref*100)*0.9)/100)+'～'+fmt(Math.floor(Math.round(ref*100)*1.1)/100):'';
-  const funds=side==='BUY'?'可用現金 '+fmt(availableCash)+' 元':'可賣 '+fmt(availableShares[symbol]||0)+' 股';
-  let result='最新成交價 '+fmt(stockPrices[symbol])+' 元'+range+'。'+funds+'。';
-  if(Number.isSafeInteger(qty)&&qty>0&&price>0){const gross=qty*price,fee=Math.ceil(Math.round(price*100)*qty*1425/1000000)/100;result+=' 以'+(isLimit?'限價':'最新成交價')+'估算金額 '+fmt(gross)+' 元，單筆預估手續費 '+fmt(fee)+' 元，預估'+(side==='BUY'?'支付 ':'收入 ')+fmt(side==='BUY'?gross+fee:gross-fee)+' 元。'; if(isLimit&&side==='BUY'){const unit=Math.round(price*100),reserve=(unit+Math.ceil(unit*1425/1000000))*qty/100;result+=' 掛單預計凍結 '+fmt(reserve)+' 元（含費用預留）。';}}
-  result+=isLimit?' 實際成交及凍結費用依委託簿為準。':' 市價可能不同於最新成交價；未成交股數會取消。';
-  document.getElementById('trade-summary').textContent=result;
+  const ref=Number(stockReferences[symbol]);
+  const box=document.getElementById('trade-summary');box.replaceChildren();
+  function row(label,value){const line=document.createElement('div');line.className='summary-row';const a=document.createElement('span'),b=document.createElement('strong');a.textContent=label;b.textContent=value;line.append(a,b);box.append(line);}
+  row('最新成交價',fmt(stockPrices[symbol])+' 元');
+  row(side==='BUY'?'可用現金':'可賣股數',side==='BUY'?fmt(availableCash)+' 元':fmt(availableShares[symbol]||0)+' 股');
+  if(ref>0)row('漲跌停範圍',fmt(Math.ceil(Math.round(ref*100)*0.9)/100)+'～'+fmt(Math.floor(Math.round(ref*100)*1.1)/100));
+  if(Number.isSafeInteger(qty)&&qty>0&&price>0){const gross=qty*price,fee=Math.ceil(Math.round(price*100)*qty*1425/1000000)/100;row('預估手續費',fmt(fee)+' 元');row(side==='BUY'?'預估支付':'預估收入',fmt(side==='BUY'?gross+fee:gross-fee)+' 元'); if(isLimit&&side==='BUY'){const unit=Math.round(price*100),reserve=(unit+Math.ceil(unit*1425/1000000))*qty/100;row('預計凍結',fmt(reserve)+' 元');}}
+  const note=document.createElement('p');note.className='summary-note';note.textContent=isLimit?'以限價估算；實際成交及凍結費用依委託簿為準。':'以最新成交價估算，市價可能不同；未成交股數會取消。';box.append(note);
 }
 function act(symbol, side, isLimit = false) {
   if (trading) return;
@@ -392,11 +453,15 @@ async function loadCharts() {
     for (const [symbol,points] of Object.entries(data.histories)) {
       const card=document.createElement('section');
       card.className='chart'; card.dataset.chartSymbol=symbol;
-      const title=document.createElement('h3'); title.textContent=(stockNames[symbol] || symbol) + '　' + fmt(stockPrices[symbol]);
+      if(points.length<2)card.classList.add('no-history');
+      const title=document.createElement('h3'); title.textContent=stockNames[symbol] || symbol;
+      const price=document.createElement('div');price.className='chart-price';price.textContent=fmt(stockPrices[symbol])+' 元';
       const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
       svg.setAttribute('role','img'); svg.setAttribute('aria-label',title.textContent+'最近六小時成交價格走勢');
       const note=document.createElement('div'); note.className='chart-note';
-      card.append(title,svg,note); container.append(card);
+      const action=document.createElement('button');action.type='button';action.className='chart-action';action.textContent='買進';action.setAttribute('aria-label',title.textContent+' 行情買進');
+      action.addEventListener('click',()=>{document.querySelector('[data-page="trade"]').click();act(symbol,'BUY');});
+      card.append(title,price,svg,note,action); container.append(card);
       renderChart(svg,note,points);
     }
   } catch (error) { container.textContent='無法讀取價格走勢，請重新整理。'; }
@@ -414,7 +479,7 @@ function renderChart(svg,note,points) {
   const start = times[0], duration = times[times.length-1]-start;
   const coords = prices.map((price,i) => (20 + (duration ? (times[i]-start)/duration : i/(prices.length-1))*760).toFixed(1) + ',' + (160-(price-min)/span*130).toFixed(1)).join(' ');
   svg.setAttribute('viewBox','0 0 800 180');
-  svg.innerHTML = '<polyline fill="none" stroke="#60a5fa" stroke-width="3" points="' + coords + '" />';
+  svg.innerHTML = '<polyline fill="none" stroke="#354b3b" stroke-width="3" points="' + coords + '" />';
   const clock=t=>new Date(t).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
   note.textContent = clock(times[0])+' 至 '+clock(times[times.length-1])+' · 最低 '+fmt(min)+'、最高 '+fmt(max)+'、最新 '+fmt(prices[prices.length-1])+' 元。只顯示真實成交（最多 500 筆）。';
 }
