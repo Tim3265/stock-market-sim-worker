@@ -26,8 +26,9 @@ export async function maybeTick(db, now = Date.now()) {
     const previous=Number(stock.price),fair=Number(stock.fair_price)||previous;
     const symbolSeed=Array.from(stock.symbol).reduce((n,c)=>n+c.charCodeAt(0),0);
     const randomUnit=Math.sin((Number(state.tick_count)+1)*431+symbolSeed*17)*43758.5453;
-    const noise=((randomUnit-Math.floor(randomUnit))*2-1)*Number(stock.volatility);
-    const movement=Math.max(-0.03,Math.min(0.03,-0.05*(previous-fair)/fair+noise));
+    const vol = Math.max(Number(stock.volatility || 0), (['YZU','YOUJIAN'].includes(stock.symbol) ? 0.035 : (['3711','2317'].includes(stock.symbol) ? 0.02 : 0.012)));
+    const noise=((randomUnit-Math.floor(randomUnit))*2-1)*vol;
+    const movement=Math.max(-0.06,Math.min(0.06,-0.05*(previous-fair)/fair+noise));
     const center=previous*(1+movement);
     prepared.push(db.prepare('UPDATE stocks SET ref_price=?,ref_date=? WHERE symbol=?').bind(reference,date,stock.symbol));
     let reservedShares=0, remainingShares=inventoryBySymbol.get(stock.symbol)??0;
