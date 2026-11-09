@@ -13,6 +13,7 @@ import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed } from '.
 import { maybeTick } from './domain/marketMaker.js';
 import * as auth from './domain/auth.js';
 import { runBotActivity } from './domain/botActivity.js';
+import { getActiveEvents } from './domain/events.js';
 
 const DEFAULT_TRADE_LIMIT = 20;
 const MAX_TRADE_LIMIT = 100;
@@ -54,12 +55,14 @@ async function route(request, env) {
   }
   if (path === '/api/live' && request.method === 'GET') {
     const symbol = url.searchParams.get('symbol') || '2330';
+    const tradeSide = url.searchParams.get('trade_side') || '';
+    if (tradeSide && !['BUY', 'SELL'].includes(tradeSide)) return fail('INVALID_INPUT','篩選條件錯誤');
     let stocks = await queries.listStocks(env.DB);
     if (upgraded) {
       stocks = (await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
     }
     const session = await auth.session(env.DB, request);
-    let account = null, holdings = [], orders = [];
+    let account = null, holdings = [], orders = [], trades = [];
     if (session) {
       const snap = await snapshot(env.DB, session.account_id);
       if (snap.ok) {
@@ -72,7 +75,14 @@ async function route(request, env) {
         }
       }
       const ordResult = await listOrders(env.DB, session.account_id);
-      if (ordResult.ok) orders = ordResult.orders;
+      if (ordResult.ok) {
+        orders = ordResult.orders;
+        if (account) {
+          account.frozen_cash = ordResult.frozenCash;
+          account.available_cash = ordResult.availableCash;
+        }
+      }
+      trades = await queries.listTrades(env.DB, session.account_id, 30, 0, {side: tradeSide});
     }
     const bookResult = await book(env.DB, symbol);
     const fills = (await env.DB.prepare(`
@@ -83,23 +93,31 @@ async function route(request, env) {
       JOIN stocks s ON s.symbol = f.symbol
       JOIN accounts b ON b.id = f.buyer_id
       JOIN accounts se ON se.id = f.seller_id
-      ORDER BY f.id DESC LIMIT 10
+      ORDER BY f.id DESC LIMIT 60
     `).all()).results;
     const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
     const queriesList = stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 100").bind(sym));
     const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
+    const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
+    const events = getActiveEvents(state?.tick_count || 0);
     const histories = Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()]));
     return ok({
       stocks,
       account,
       holdings,
       orders,
+      trades,
       bids: bookResult.bids || [],
       asks: bookResult.asks || [],
       fills,
+      events,
       histories,
       username: session ? session.username : null
     });
+  }
+  if (path === '/api/events' && request.method === 'GET') {
+    const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
+    return ok({ events: getActiveEvents(state?.tick_count || 0) });
   }
   if (path === '/api/market-activity' && request.method === 'GET') {
     const fills = (await env.DB.prepare(`
@@ -110,13 +128,13 @@ async function route(request, env) {
       JOIN stocks s ON s.symbol = f.symbol
       JOIN accounts b ON b.id = f.buyer_id
       JOIN accounts se ON se.id = f.seller_id
-      ORDER BY f.id DESC LIMIT 15
+      ORDER BY f.id DESC LIMIT 60
     `).all()).results;
     return ok({ fills });
   }
   if (path === '/api/tick' && request.method === 'POST') {
     if (upgraded) {
-      await maybeTick(env.DB, Date.now() + 5000);
+      await maybeTick(env.DB);
       await matchCrossed(env.DB);
       await runBotActivity(env.DB);
     }
@@ -228,6 +246,8 @@ async function getAccount(env, accountId, upgraded) {
   const result = await snapshot(env.DB, accountId);
   if (!result.ok) return fail(result.code, result.message);
   if (upgraded) {
+    const accRow = await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=?').bind(accountId).first();
+    if (accRow) { result.account.frozen_cash = accRow.frozen_cash; }
     const frozen=(await env.DB.prepare('SELECT symbol,frozen_shares FROM holdings WHERE account_id=?').bind(accountId).all()).results;
     const bySymbol=Object.fromEntries(frozen.map(row=>[row.symbol,row.frozen_shares]));
     for(const holding of result.holdings)holding.frozen_shares=bySymbol[holding.symbol]||0;

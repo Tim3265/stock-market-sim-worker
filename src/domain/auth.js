@@ -46,7 +46,7 @@ export async function guestLogin(db, nickname) {
  const rand = Math.floor(1000 + Math.random() * 9000);
  const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 12) : '大戶_' + rand;
  const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '') || ('Whale_' + rand);
- const username = baseName.length > 18 ? baseName.slice(0, 18) + '_' + rand : baseName;
+ const username = baseName.slice(0, 12) + '_' + randomHex(8);
  const salt = randomHex(16), hash = await derive('guest-token-' + rand, salt);
  const id = 10000000 + crypto.getRandomValues(new Uint32Array(1))[0];
  const initialCash = 10000000;

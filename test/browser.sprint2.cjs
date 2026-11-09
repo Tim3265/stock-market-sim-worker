@@ -6,7 +6,7 @@ const assert=require('node:assert/strict');
  try{
   const page=await browser.newPage({viewport:{width:1366,height:900}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
-  const origin=process.env.E2E_ORIGIN||'http://127.0.0.1:8789';
+  const origin=process.env.E2E_ORIGIN||'http://127.0.0.1:8790';
   await page.goto(origin+'/');
   await page.locator('#username').fill('test_'+Date.now());
   await page.locator('#password').fill('example-pass-123');

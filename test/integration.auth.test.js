@@ -7,7 +7,36 @@ async function create(name){
  const registration=await post('/api/auth/register',{username:name,password:'valid-pass-123'});expect(registration.status).toBe(200);
  const login=await post('/api/auth/login',{username:name,password:'valid-pass-123'});expect(login.status).toBe(200);return login.headers.get('Set-Cookie').split(';')[0];
 }
+it('allows repeated guest logins with the same nickname',async()=>{
+ const a=await post('/api/auth/guest',{nickname:'guest'}),b=await post('/api/auth/guest',{nickname:'guest'});
+ expect(a.status).toBe(200);expect(b.status).toBe(200);
+ const ca=a.headers.get('Set-Cookie').split(';')[0],cb=b.headers.get('Set-Cookie').split(';')[0];
+ const aa=await (await SELF.fetch(base+'/api/account',{headers:{Cookie:ca}})).json();
+ const ab=await (await SELF.fetch(base+'/api/account',{headers:{Cookie:cb}})).json();
+ expect(aa.account.id).not.toBe(ab.account.id);
+});
 describe('玩家登入和資料隔離',()=>{
+ it('成交類別篩選先查詢再限制筆數',async()=>{
+  const cookie=await create('filtered_trades');
+  const account=(await (await SELF.fetch(base+'/api/account',{headers:{Cookie:cookie}})).json()).account;
+  await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares) VALUES(?,'YZU',1)").bind(account.id).run();
+  const insert=side=>env.DB.prepare("INSERT INTO trades(account_id,symbol,side,shares,price,amount) VALUES(?,'YZU',?,1,45,45)").bind(account.id,side);
+  await env.DB.batch([insert('SELL'),...Array.from({length:31},()=>insert('BUY'))]);
+  const live=await (await SELF.fetch(base+'/api/live?trade_side=SELL',{headers:{Cookie:cookie}})).json();
+  const trades=await (await SELF.fetch(base+'/api/trades?limit=30&side=SELL',{headers:{Cookie:cookie}})).json();
+  expect(live.trades).toHaveLength(1);
+  expect(live.trades[0].side).toBe('SELL');
+  expect(live.trades).toEqual(trades.trades);
+ });
+ it('即時行情回傳登入玩家最新成交紀錄',async()=>{
+  const cookie=await create('live_trades');
+  const order=await post('/api/orders',{symbol:'YZU',side:'BUY',shares:1,request_id:'live-trades-test-0001'},cookie);
+  expect(order.status).toBe(200);
+  const live=await (await SELF.fetch(base+'/api/live?symbol=YZU',{headers:{Cookie:cookie}})).json();
+  const trades=await (await SELF.fetch(base+'/api/trades?limit=30',{headers:{Cookie:cookie}})).json();
+  expect(live.trades).toEqual(trades.trades);
+  expect(live.trades.length).toBeGreaterThan(0);
+ });
  it('未登入不能讀取帳戶或下單',async()=>{
   expect((await SELF.fetch(base+'/api/account')).status).toBe(401);
   expect((await post('/api/orders',{symbol:'YZU',side:'BUY',shares:1})).status).toBe(401);
