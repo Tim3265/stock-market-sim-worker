@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 (async()=>{
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
-  const origin=process.env.E2E_ORIGIN||'http://127.0.0.1:8789';
+  const origin=process.env.E2E_ORIGIN||'http://127.0.0.1:8790';
   async function makePlayer(suffix){
    const context=await browser.newContext(),page=await context.newPage();
    await page.goto(origin);await page.locator('#username').fill('user_'+Date.now()+'_'+suffix);

@@ -233,6 +233,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const before=await env.DB.prepare("SELECT price FROM stocks WHERE symbol='2330'").first();
   expect(await maybeTick(env.DB,2000000000000)).toBe(true);
   expect(await maybeTick(env.DB,2000000001000)).toBe(false);
+  expect(await maybeTick(env.DB,2000000059000)).toBe(false);
   expect(await maybeTick(env.DB,2000000060000)).toBe(true);
   expect(await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first()).toMatchObject({tick_count:2});
   expect(await env.DB.prepare("SELECT price FROM stocks WHERE symbol='2330'").first()).toEqual(before);
@@ -248,4 +249,28 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect(new Set(large.body.fills.map(f=>f.price)).size).toBe(1);
   expect(new Set(small.body.fills.map(f=>f.price)).size).toBeGreaterThan(1);
  });
+});
+
+describe("黑天鵝與市場快訊 API", () => {
+  it("GET /api/events 回傳即時市場事件清單", async () => {
+    const res = await (await SELF.fetch('https://example.com/api/events')).json();
+    expect(res.ok).toBe(true);
+    expect(Array.isArray(res.events)).toBe(true);
+    expect(res.events.length).toBeGreaterThan(0);
+    expect(res.events[0]).toMatchObject({
+      id: expect.any(String),
+      symbol: expect.any(String),
+      type: expect.any(String),
+      title: expect.any(String),
+      impact: expect.any(String),
+      timestamp: expect.any(Number)
+    });
+  });
+
+  it("GET /api/live 包含最新黑天鵝市場事件", async () => {
+    const res = await (await SELF.fetch('https://example.com/api/live?symbol=2330')).json();
+    expect(res.ok).toBe(true);
+    expect(Array.isArray(res.events)).toBe(true);
+    expect(res.events.length).toBeGreaterThan(0);
+  });
 });

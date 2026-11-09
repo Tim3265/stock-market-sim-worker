@@ -2,8 +2,14 @@
 const BOT = 1000000;
 const round = n => Math.round(n * 100) / 100;
 export async function maybeTick(db, now = Date.now()) {
-  const state = await db.prepare('SELECT * FROM market_state WHERE id=1').first();
-  if (!state || now - state.last_tick_at < 3000) return false;
+  let state;
+  try {
+    state = await db.prepare('SELECT * FROM market_state WHERE id=1').first();
+  } catch (err) {
+    if (String(err).includes('market_state')) return false;
+    throw err;
+  }
+  if (!state || now - state.last_tick_at < 60000) return false;
   const stocks=(await db.prepare('SELECT * FROM stocks ORDER BY symbol').all()).results;
   const maker=await db.prepare('SELECT cash FROM accounts WHERE id=1000000').first();
   if(!maker) throw new Error('Market maker account is missing');
