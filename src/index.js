@@ -172,7 +172,7 @@ async function route(request, env) {
     const current=await auth.session(env.DB,request);
     return current?ok({username:current.username}):Response.json({ok:false},{status:401});
   }
-  const protectedPath=path==='/api/account'||path==='/api/trades'||path==='/api/trade'||path==='/api/orders'||/^\/api\/orders\/\d+$/.test(path);
+  const protectedPath=path==='/api/account'||path==='/api/trades'||path==='/api/trades/export'||path==='/api/trade'||path==='/api/orders'||/^\/api\/orders\/\d+$/.test(path);
   const current=protectedPath?await auth.session(env.DB,request):null;
   if(protectedPath&&!current)return Response.json({ok:false,code:'UNAUTHENTICATED',message:'請先登入'},{status:401});
 
@@ -181,6 +181,30 @@ async function route(request, env) {
     const queries = stocks.map(stock => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(stock.symbol));
     const rows = queries.length ? await env.DB.batch(queries) : [];
     return ok({ histories: Object.fromEntries(stocks.map((stock,i)=>[stock.symbol,rows[i].results.reverse()])) });
+  }
+  if(path==='/api/bots' && request.method==='GET'){
+    const bots=(await env.DB.prepare("SELECT id,name,bot_kind,ROUND(cash,2) cash FROM accounts WHERE is_bot=1 ORDER BY id").all()).results;
+    const holdings=(await env.DB.prepare(`SELECT h.account_id,a.name bot_name,h.symbol,s.nickname,h.shares,h.frozen_shares
+      FROM holdings h JOIN accounts a ON a.id=h.account_id JOIN stocks s ON s.symbol=h.symbol
+      WHERE a.is_bot=1 AND h.shares>0 ORDER BY h.account_id,h.symbol`).all()).results;
+    return ok({bots,holdings});
+  }
+  if(path==='/api/volume' && request.method==='GET'){
+    const symbol=url.searchParams.get('symbol')||'';
+    if(!symbol)return fail('INVALID_INPUT','請提供 symbol');
+    const rows=(await env.DB.prepare(`SELECT strftime('%Y-%m-%d %H:%M',created_at) minute, SUM(shares) volume, COUNT(*) trades
+      FROM order_fills WHERE symbol=? AND created_at>=datetime('now','-6 hours')
+      GROUP BY minute ORDER BY minute`).bind(symbol).all()).results;
+    return ok({symbol,volume:rows});
+  }
+  if(path==='/api/trades/export' && request.method==='GET'){
+    if(!current)return Response.json({ok:false,code:'UNAUTHENTICATED',message:'請先登入'},{status:401});
+    const rows=(await env.DB.prepare(`SELECT t.id,t.symbol,s.name,t.side,t.shares,t.price,t.amount,t.fee_amount,t.created_at
+      FROM trades t JOIN stocks s ON s.symbol=t.symbol WHERE t.account_id=? ORDER BY t.id`).bind(current.account_id).all()).results;
+    const header='id,symbol,name,side,shares,price,amount,fee,created_at';
+    const esc=v=>{const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+    const csv=[header,...rows.map(r=>[r.id,r.symbol,r.name,r.side,r.shares,r.price,r.amount,r.fee_amount,r.created_at].map(esc).join(','))].join('\r\n');
+    return new Response(csv,{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="trades.csv"'}});
   }
   if(path==='/api/leaderboard' && request.method==='GET'){
     const rows=await env.DB.prepare(`SELECT c.username,ROUND(a.cash+COALESCE(SUM(h.shares*s.price),0),2) total_assets
