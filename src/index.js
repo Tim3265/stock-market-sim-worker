@@ -9,7 +9,7 @@ import { executeTrade } from "./domain/trading.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
 import { PAGE_HTML } from "./page.js";
-import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed } from './domain/orders.js';
+import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed, BROKER } from './domain/orders.js';
 import { maybeTick } from './domain/marketMaker.js';
 import * as auth from './domain/auth.js';
 import { runBotActivity } from './domain/botActivity.js';
@@ -114,6 +114,7 @@ async function route(request, env) {
       fills,
       events,
       index,
+      broker: BROKER,
       histories,
       username: session ? session.username : null
     });

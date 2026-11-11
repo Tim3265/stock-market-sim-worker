@@ -48,7 +48,7 @@ export async function maybeTick(db, now = Date.now()) {
       const qty=Math.max(1,Math.floor(stock.liquidity*factor));
       const buy=Math.max(0.01,Math.max(low,round(center*(1-offset))));
       const sell=Math.min(high,Math.max(0.01,round(center*(1+offset))));
-      const buyCents=Math.round(buy*100),feePerShare=Math.ceil(buyCents*1425/1000000), buyQty=Math.min(qty,Math.floor(remainingCash/(buyCents+feePerShare)));
+      const buyCents=Math.round(buy*100),feePerShare=Math.ceil(buyCents*399/1000000), buyQty=Math.min(qty,Math.floor(remainingCash/(buyCents+feePerShare)));
       const sellQty=Math.min(qty,remainingShares);
       if(buyQty>0){const reserved=(buyCents+feePerShare)*buyQty;remainingCash-=reserved;totalCash=round(totalCash+reserved/100);prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,?,'BUY','LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,buy,buyQty));}
       if(sellQty>0){remainingShares-=sellQty;reservedShares+=sellQty;prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,?,'SELL','LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,sell,sellQty));}
