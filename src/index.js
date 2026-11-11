@@ -50,7 +50,8 @@ async function route(request, env) {
   if (path === '/api/account/recharge' && request.method === 'POST') {
     const current = await auth.session(env.DB, request);
     if (!current) return Response.json({ ok: false }, { status: 401 });
-    await env.DB.prepare('UPDATE accounts SET cash=10000000, initial_cash=10000000 WHERE id=?').bind(current.account_id).run();
+    const initialCash = await auth.marketInitialCash(env.DB);
+    await env.DB.prepare('UPDATE accounts SET cash=?, initial_cash=? WHERE id=?').bind(initialCash, initialCash, current.account_id).run();
     return ok({ message: '已充值千萬籌碼！' });
   }
   if (path === '/api/live' && request.method === 'GET') {
