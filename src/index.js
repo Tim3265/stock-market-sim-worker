@@ -99,6 +99,7 @@ async function route(request, env) {
     const queriesList = stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 100").bind(sym));
     const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
+    const index = upgraded ? await computeIndex(env.DB) : null;
     const events = getActiveEvents(state?.tick_count || 0);
     const histories = Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()]));
     return ok({
@@ -111,9 +112,16 @@ async function route(request, env) {
       asks: bookResult.asks || [],
       fills,
       events,
+      index,
       histories,
       username: session ? session.username : null
     });
+  }
+  if (path === '/api/index' && request.method === 'GET') {
+
+    const index = await computeIndex(env.DB);
+    const history = (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").all()).results.reverse();
+    return ok({ index, history });
   }
   if (path === '/api/events' && request.method === 'GET') {
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
@@ -290,6 +298,21 @@ async function postTrade(request, env) {
   if (!result.ok) return fail(result.code, result.message);
 
   return ok({ trade: result.trade });
+}
+
+// ---------- 六檔加權指數 ----------
+// 以流動性為權重、當日參考價為基期（1000點），反映六檔整體漲跌。
+async function computeIndex(db) {
+  const stocks = (await db.prepare("SELECT symbol,price,ref_price,ref_date,liquidity FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN')").all()).results;
+  const date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  let base = 0, cur = 0;
+  for (const s of stocks) {
+    const w = Number(s.liquidity) || 0;
+    const ref = s.ref_date === date ? Number(s.ref_price) : Number(s.price);
+    base += w * ref;
+    cur += w * Number(s.price);
+  }
+  return base > 0 ? Math.round(1000 * cur / base * 100) / 100 : 1000;
 }
 
 // ---------- 小工具 ----------
