@@ -233,8 +233,8 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const before=await env.DB.prepare("SELECT price FROM stocks WHERE symbol='2330'").first();
   expect(await maybeTick(env.DB,2000000000000)).toBe(true);
   expect(await maybeTick(env.DB,2000000001000)).toBe(false);
-  expect(await maybeTick(env.DB,2000000059000)).toBe(false);
-  expect(await maybeTick(env.DB,2000000060000)).toBe(true);
+  expect(await maybeTick(env.DB,2000000014000)).toBe(false);
+  expect(await maybeTick(env.DB,2000000015000)).toBe(true);
   expect(await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first()).toMatchObject({tick_count:2});
   expect(await env.DB.prepare("SELECT price FROM stocks WHERE symbol='2330'").first()).toEqual(before);
   expect(await env.DB.prepare('SELECT COUNT(*) n FROM price_history').first()).toMatchObject({n:0});
