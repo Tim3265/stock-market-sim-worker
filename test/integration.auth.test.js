@@ -95,14 +95,17 @@ describe('玩家登入和資料隔離',()=>{
   expect(results.every(r=>r.status===200)).toBe(true);
   for(const cookie of cookies){const data=await (await SELF.fetch(base+'/api/account',{headers:{Cookie:cookie}})).json();expect(data.holdings.find(h=>h.symbol==='YZU').shares).toBe(1);}
  });
- it('guest login provides instant disposable account with 10M cash and recharge works', async () => {
+ it('guest login provides instant disposable account with market-based cash and recharge works', async () => {
   const res = await post('/api/auth/guest', { nickname: '巨鯨' });
   expect(res.status).toBe(200);
   const cookie = res.headers.get('Set-Cookie').split(';')[0];
   const accRes = await SELF.fetch(base + '/api/account', { headers: { Cookie: cookie } });
   const accData = await accRes.json();
   expect(accData.ok).toBe(true);
-  expect(accData.account.cash).toBe(10000000);
+  const stocks = (await env.DB.prepare("SELECT price, liquidity FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN')").all()).results;
+  const expected = Math.max(100000, Math.round(stocks.reduce((s, r) => s + Number(r.price) * (Number(r.liquidity) || 0), 0) / 1000));
+  expect(accData.account.cash).toBe(expected);
+  expect(accData.account.cash).toBe(accData.account.initial_cash);
   expect(accData.account.name).toContain('巨鯨');
 
   const recharge = await post('/api/account/recharge', {}, cookie);
