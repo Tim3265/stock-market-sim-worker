@@ -116,9 +116,9 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect(state.cash).toBeLessThanOrEqual(100000);
   expect((await env.DB.prepare("SELECT SUM(shares) total FROM holdings WHERE account_id IN (1,2) AND symbol='YZU'").first()).total).toBe(10);
  });
- it('造市商產生買賣五檔，玩家買入並以掛單價交割',async()=>{
+ it('造市商產生買賣十檔，玩家買入並以掛單價交割',async()=>{
   const book=await get('/api/orderbook?symbol=2330');
-  expect(book.status).toBe(200);expect(book.body.asks.length).toBeGreaterThan(0);
+  expect(book.status).toBe(200);expect(book.body.asks.length).toBe(5);expect(book.body.bids.length).toBe(5);
   const makerPrice=book.body.asks[0].price;
   const result=await order({account_id:1,symbol:'2330',side:'BUY',type:'MARKET',shares:10,request_id:'one-test-request-0001'});
   expect(result.status).toBe(200);expect(result.body).toMatchObject({filledShares:10,remaining:0,status:'FILLED'});
@@ -130,8 +130,8 @@ describe('Sprint 2: 市價單及造市商',()=>{
  it('買單流動性不足時部分成交並取消餘量',async()=>{
   await get('/api/orderbook?symbol=YOUJIAN');
   await env.DB.prepare('UPDATE accounts SET cash=10000000 WHERE id=1').run();
-  const r=await order({account_id:1,symbol:'YOUJIAN',side:'BUY',type:'MARKET',shares:1000,request_id:'partial-request-0001'});
-  expect(r.status).toBe(200);expect(r.body.filledShares).toBe(340);expect(r.body.remaining).toBe(660);expect(r.body.status).toBe('CANCELLED');
+  const r=await order({account_id:1,symbol:'YOUJIAN',side:'BUY',type:'MARKET',shares:2000,request_id:'partial-request-0001'});
+  expect(r.status).toBe(200);expect(r.body.filledShares).toBe(1040);expect(r.body.remaining).toBe(960);expect(r.body.status).toBe('CANCELLED');
  });
  it('六檔股票含右鍵，不把舊資料中的股票刪除',async()=>{
   const r=await get('/api/stocks');expect(r.body.stocks.map(s=>s.symbol).sort()).toEqual(['2317','2330','2454','3711','YOUJIAN','YZU']);
@@ -245,7 +245,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const large=await order({account_id:1,symbol:'2330',side:'BUY',shares:10000,request_id:'liquid-market-0001'});
   expect(large.body.filledShares).toBe(10000);
   const small=await order({account_id:1,symbol:'YZU',side:'BUY',shares:10000,request_id:'thin-market-00001'});
-  expect(small.body.filledShares).toBe(510);expect(small.body.remaining).toBe(9490);
+  expect(small.body.filledShares).toBe(1560);expect(small.body.remaining).toBe(8440);
   expect(new Set(large.body.fills.map(f=>f.price)).size).toBe(1);
   expect(new Set(small.body.fills.map(f=>f.price)).size).toBeGreaterThan(1);
  });
