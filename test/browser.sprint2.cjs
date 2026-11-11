@@ -43,13 +43,22 @@ const assert=require('node:assert/strict');
   const result=await (await page.request.get(origin+'/api/account?id=1')).json();
   assert.equal(result.holdings.find(h=>h.symbol==='2330')?.shares||0,before.holdings.find(h=>h.symbol==='2330')?.shares||0);
   await page.waitForSelector('[data-chart-symbol="2330"] polyline',{state:'attached'});
+  // 限價必須落在當日 ±10% 區間內才會被接受，且要低於最低賣價才會留在掛單中等待撮合。
+  // 行情每分鐘都會變動，所以價格要從即時報價算出來，不能寫死。
+  const stocks=(await (await page.request.get(origin+'/api/stocks')).json()).stocks;
+  const yzu=stocks.find(s=>s.symbol==='YZU');
+  assert(yzu && Number.isFinite(Number(yzu.ref_price)),'缺少 YZU 參考價');
+  const refCents=Math.round(Number(yzu.ref_price)*100);
+  const limitCents=Math.ceil(refCents*0.9);
+  const feeCents=Math.ceil(limitCents*1425/1000000);
+  const expectedFrozen=((limitCents+feeCents)*2/100).toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2});
   await page.locator('#rows tr').filter({hasText:'元智 AI'}).getByRole('button',{name:'元智 AI 買進'}).click();
   await page.locator('#trade-type').selectOption('LIMIT');
   await page.getByLabel('交易股數').fill('2');
-  await page.getByLabel('每股限價').fill('41');
+  await page.getByLabel('每股限價').fill(String(limitCents/100));
   await page.getByRole('button',{name:'確認買進'}).click();
   await page.waitForFunction(()=>document.querySelector('#orders').textContent.includes('等待成交'));
-  assert((await page.locator('#available').textContent()).includes('82'));
+  assert((await page.locator('#available').textContent()).includes('凍結 ' + expectedFrozen));
   await page.locator('#orders tr').filter({hasText:'等待成交'}).getByRole('button',{name:'取消'}).click();
   await page.getByRole('button',{name:'確認取消委託'}).click();
   await page.waitForFunction(()=>!document.querySelector('#orders').textContent.includes('等待成交'));
