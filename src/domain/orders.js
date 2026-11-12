@@ -53,7 +53,8 @@ export async function matchCrossed(db){
     ORDER BY b.symbol,b.price DESC,b.id ASC,s.price ASC,s.id ASC LIMIT 1`).first();
   if(!pair)return;
   const shares=Math.min(pair.bid_qty,pair.ask_qty),price=pair.bid_id<pair.ask_id?pair.bid:pair.ask;
-  const amount=money(cents(price)*shares),reserved=money(cents(pair.bid)*shares+(pair.bid_fee?feeCents(cents(pair.bid),shares):0));
+  const bidReserve=n=>cents(pair.bid)*n+(pair.bid_fee?feeCents(cents(pair.bid),n):0);
+  const amount=money(cents(price)*shares),reserved=money(bidReserve(pair.bid_qty)-bidReserve(pair.bid_qty-shares));
   const buyerFee=pair.bid_fee?money(feeCents(cents(price),shares)):0,sellerFee=pair.ask_fee?money(feeCents(cents(price),shares)):0;
   const maker=Math.min(pair.bid_id,pair.ask_id),taker=Math.max(pair.bid_id,pair.ask_id);
   const ops=[
@@ -126,8 +127,11 @@ export async function placeMarketOrder(db,input){
     ops.push(prepare(db,'UPDATE accounts SET cash=ROUND(cash-?-?,2) WHERE id=?',amount,buyerFee,buyer));
     ops.push(prepare(db,'UPDATE holdings SET shares=shares-?,frozen_shares=frozen_shares-? WHERE account_id=? AND symbol=?',f.shares,f.shares,seller,symbol));
    }else{
-    // 逐筆釋放時手續費要與預扣一致，用該筆成交的整體股數計算，避免逐股進位誤差。
-    const reserve=money(cents(f.price)*f.shares+(makerFee?feeCents(cents(f.price),f.shares):0));
+    // 逐筆釋放採用「成交前後預扣差額」（reserve(before)-reserve(after)），
+    // 多次部分成交的手續費總和恰好等於下單時凍結的金額，不會多扣或少扣。
+    const makerRow=rows.find(row=>row.id===f.orderId);
+    const mkReserve=n=>cents(f.price)*n+(makerRow?.fee_scheme?feeCents(cents(f.price),n):0);
+    const reserve=money(mkReserve(makerRow.remaining)-mkReserve(makerRow.remaining-f.shares));
     ops.push(prepare(db,'UPDATE accounts SET cash=ROUND(cash-?-?,2),frozen_cash=ROUND(frozen_cash-?,2) WHERE id=?',amount,buyerFee,reserve,buyer));
     ops.push(prepare(db,'UPDATE holdings SET shares=shares-? WHERE account_id=? AND symbol=?',f.shares,seller,symbol));
    }
