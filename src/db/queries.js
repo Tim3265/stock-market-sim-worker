@@ -49,17 +49,25 @@ export async function listHoldings(db, accountId) {
 
 // ---------- 交易紀錄 ----------
 export async function listTrades(db, accountId, limit, offset=0, filters={}) {
+  // 動態組 WHERE，讓有帶條件的查詢可以直接走 idx_trades_account 索引，
+  // 避免 (? = '' OR col = ?) 這種寫法讓 SQLite 放棄索引掃描。
+  const where = ['t.account_id = ?'];
+  const params = [accountId];
+  if (filters.symbol) { where.push('t.symbol = ?'); params.push(filters.symbol); }
+  if (filters.side) { where.push('t.side = ?'); params.push(filters.side); }
+  if (filters.from) { where.push("t.created_at >= datetime(?, '-8 hours')"); params.push(filters.from); }
+  if (filters.to) { where.push("t.created_at < datetime(?, '+1 day', '-8 hours')"); params.push(filters.to); }
+  params.push(limit, offset);
   const { results } = await db
     .prepare(
       `SELECT t.*, s.name
          FROM trades t
          JOIN stocks s ON s.symbol = t.symbol
-        WHERE t.account_id = ? AND (? = '' OR t.symbol = ?) AND (? = '' OR t.side = ?)
-          AND (? = '' OR t.created_at >= datetime(?, '-8 hours')) AND (? = '' OR t.created_at < datetime(?, '+1 day', '-8 hours'))
+        WHERE ${where.join(' AND ')}
         ORDER BY t.id DESC
         LIMIT ? OFFSET ?`
     )
-    .bind(accountId,filters.symbol||'',filters.symbol||'',filters.side||'',filters.side||'',filters.from||'',filters.from||'',filters.to||'',filters.to||'',limit,offset)
+    .bind(...params)
     .all();
   return results;
 }
