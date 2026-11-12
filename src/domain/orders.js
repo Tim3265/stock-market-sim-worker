@@ -12,7 +12,7 @@ export async function book(db,symbol,depth=10){
  await maybeTick(db);
  const stock=await prepare(db,'SELECT symbol,price,ref_price FROM stocks WHERE symbol=?',symbol).first();
  if(!stock)return err('NOT_FOUND','沒有這檔股票');
- const rows=(await prepare(db,"SELECT side,price,SUM(shares-filled_shares) quantity FROM orders WHERE symbol=? AND status IN ('OPEN','PARTIAL') GROUP BY side,price",symbol).all()).results;
+ const rows=(await prepare(db,"SELECT side,price,SUM(shares-filled_shares) quantity FROM orders WHERE symbol=? AND status IN ('OPEN','PARTIAL') AND type='LIMIT' GROUP BY side,price",symbol).all()).results;
  return {ok:true,stock,bids:rows.filter(x=>x.side==='BUY').sort((a,b)=>b.price-a.price).slice(0,depth),asks:rows.filter(x=>x.side==='SELL').sort((a,b)=>a.price-b.price).slice(0,depth)};
 }
 export async function listOrders(db,accountId){
@@ -126,7 +126,8 @@ export async function placeMarketOrder(db,input){
     ops.push(prepare(db,'UPDATE accounts SET cash=ROUND(cash-?-?,2) WHERE id=?',amount,buyerFee,buyer));
     ops.push(prepare(db,'UPDATE holdings SET shares=shares-?,frozen_shares=frozen_shares-? WHERE account_id=? AND symbol=?',f.shares,f.shares,seller,symbol));
    }else{
-    const reserve=money((cents(f.price)+(makerFee?feeCents(cents(f.price),1):0))*f.shares);
+    // 逐筆釋放時手續費要與預扣一致，用該筆成交的整體股數計算，避免逐股進位誤差。
+    const reserve=money(cents(f.price)*f.shares+(makerFee?feeCents(cents(f.price),f.shares):0));
     ops.push(prepare(db,'UPDATE accounts SET cash=ROUND(cash-?-?,2),frozen_cash=ROUND(frozen_cash-?,2) WHERE id=?',amount,buyerFee,reserve,buyer));
     ops.push(prepare(db,'UPDATE holdings SET shares=shares-? WHERE account_id=? AND symbol=?',f.shares,seller,symbol));
    }
@@ -144,7 +145,7 @@ export async function placeMarketOrder(db,input){
   }
   ops.push(db.prepare('DELETE FROM transaction_guard'));
   try{await db.batch(ops);return readResult(db,await prepare(db,'SELECT * FROM orders WHERE request_id=?',requestId).first());}
-  catch(e){const message=String(e);if(message.includes('market_revision_guard')||message.includes('UNIQUE constraint failed: orders.request_id'))continue;if(message.includes('INSUFFICIENT_CASH'))return err('INSUFFICIENT_CASH','可用現金不足');if(message.includes('INSUFFICIENT_SHARES'))return err('INSUFFICIENT_SHARES','可用持股不足');throw e;}
+  catch(e){const message=String(e);if(message.includes('market_revision_guard')||message.includes('UNIQUE constraint failed: orders.request_id'))continue;if(message.includes('INSUFFICIENT_CASH'))return err('INSUFFICIENT_CASH','可用現金不足');if(message.includes('INSUFFICIENT_SHARES'))return err('INSUFFICIENT_SHARES','可用持股不足');if(message.includes('CHECK constraint failed'))return err('INVALID_STATE','資料違反資料庫約束，請重新整理後再試');throw e;}
  }
  return err('CONFLICT','市場正在更新，請重試');
 }

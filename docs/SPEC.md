@@ -351,25 +351,28 @@ SELECT ...,
 - `price > 0`、`shares > 0`、`filled_shares <= shares`
 - `side IN ('BUY','SELL')`
 - `type IN ('MARKET','LIMIT')`
-- `status IN ('OPEN','PARTIAL','FILLED','CANCELLED','REJECTED')`
-- `type = 'MARKET'` → `price IS NULL`；`type = 'LIMIT'` → `price > 0`
+- `status IN ('OPEN','PARTIAL','FILLED','CANCELLED')`
+- CHECK：`(type='LIMIT' AND price IS NOT NULL AND price > 0) OR type='MARKET'`（市價單 price 允許為 NULL）
 - 所有 `account_id`、`symbol`、`order_id` 都有 FK
 
 **Trigger（資料庫層的最後防線）**
 
 ```sql
--- 買單成交前，確認現金足夠（含手續費）
-CREATE TRIGGER trg_fill_buy_guard BEFORE INSERT ON trades
-WHEN NEW.buyer_id IS NOT NULL
- AND (SELECT cash - frozen_cash FROM accounts WHERE id = NEW.buyer_id) < NEW.amount
+-- 限價買單寫入時，確認「可用現金」足以支付剩餘價款＋整體手續費（0.0399%，一次向上取整）
+CREATE TRIGGER trg_order_buy_guard BEFORE INSERT ON orders
+WHEN NEW.side='BUY' AND NEW.type='LIMIT' AND NEW.status IN ('OPEN','PARTIAL')
+ AND (SELECT (cash - frozen_cash)*100 FROM accounts WHERE id=NEW.account_id)
+     < (CAST(ROUND(NEW.price*100) AS INTEGER) * (NEW.shares - NEW.filled_shares)
+        + CAST(CEIL(NEW.price*100*(NEW.shares - NEW.filled_shares)*399/1000000) AS INTEGER))
 BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 
--- 賣單成交前，確認持股足夠
-CREATE TRIGGER trg_fill_sell_guard BEFORE INSERT ON trades
-WHEN NEW.seller_id IS NOT NULL
- AND COALESCE((SELECT shares - frozen_shares FROM holdings
-                WHERE account_id = NEW.seller_id AND symbol = NEW.symbol), 0) < NEW.shares
-BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_SHARES'); END;
+-- 買單成交寫入時，確認「總現金」足以支付價款＋手續費。
+-- 掛單買方的資金當下可能仍屬 frozen_cash，同一個 batch 會接著釋放，
+-- 因此此處檢查總現金而非可用現金（見 migrations/0008）。
+CREATE TRIGGER trg_trade_buy_guard BEFORE INSERT ON trades
+WHEN NEW.side = 'BUY'
+ AND (SELECT cash*100 FROM accounts WHERE id = NEW.account_id) < CAST(ROUND((NEW.amount + NEW.fee_amount)*100) AS INTEGER)
+BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 ```
 
 > 應用層先檢查是為了給友善訊息；Trigger 是最後一道防線。
@@ -499,9 +502,9 @@ UPDATE market_state
 | GET | `/api/history?symbol=2330&hours=6` | 走勢（最後成交價） |
 | POST | `/api/orders` | 下單（市價或限價） |
 | DELETE | `/api/orders/:id` | 取消委託 |
-| POST | `/api/trade` | 市價單捷徑（相容舊版） |
-| POST | `/api/market/tick` | 手動推進一輪（開發用） |
-| POST | `/api/market/fast-forward?ticks=100` | 快轉產生歷史（僅開發／demo） |
+| POST | `/api/trade` | 已停用，固定回 400，請改用 `/api/orders` |
+| POST | `/api/tick` | 手動推進一輪（需登入，開發／demo 用） |
+| POST | `/api/market/fast-forward` | body `{"ticks":1..60}` 快轉產生歷史（需登入；設 DEV_SECRET 時需 Bearer 金鑰） |
 
 `POST /api/orders`
 
@@ -641,7 +644,7 @@ snapshot(db, accountId)
 | Q2 | 資料來源 | **TWSE OpenAPI**（僅校準參數） |
 | Q3 | 價格形成 | **委託簿撮合 + 機器人** |
 | Q4 | 登入 | **本學期不做**，改用切換帳戶 |
-| Q5 | 手續費 | 有，0.1425%（Sprint 4） |
+| Q5 | 手續費 | 有，0.0399%（大樹證券 2.8 折，Sprint 4） |
 | Q6 | 走勢圖 | 近 6 小時 |
 | Q7 | tick 間隔 | **15 秒，有人使用才推進** |
 | Q8 | 股票檔數 | 6 檔（含虛構的第六檔「右鍵」） |
