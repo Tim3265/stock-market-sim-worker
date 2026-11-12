@@ -166,7 +166,7 @@ UPDATE market_state
 ```
 deviation = (price − fair_price) / fair_price
 drift     = −0.05 × deviation        -- 偏離 10% 拉回 0.5%
-noise     = 介於 ±volatility 的可重現擾動，預設約 0.3%
+noise     = 介於 ±volatility 的可重現擾動，預設約 0.3%（實作另有個股下限：一般 1.2%、3711/2317 2%、YZU/YOUJIAN 3.5%）
 change    = drift + noise
 中價       = price × (1 + change)，限制 ±6%
 ```
@@ -416,7 +416,7 @@ BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 ### 9.1 下單流程
 
 ```
-placeOrder(db, { accountId, symbol, side, type, price, shares })
+placeMarketOrder(db, { account_id, symbol, side, type, price, shares, request_id })
   1. 驗證參數（正整數股數、合法方向與型態、價格刻度）
   2. 讀 stocks、accounts（同一個 batch 之前）
   3. 限價單檢查漲跌停範圍
@@ -504,14 +504,14 @@ UPDATE market_state
 |---|---|---|
 | GET | `/api/stocks` | 行情（含最後成交價、漲跌） |
 | GET | `/api/orderbook?symbol=2330&depth=10` | 委託簿（聚合後的最佳 10 檔，depth 可調 1–20） |
-| GET | `/api/account?id=1` | 帳戶、持股、資產 |
-| GET | `/api/trades?id=1&symbol=&side=&from=&to=&limit=20&offset=0` | 我的成交（篩選＋分頁） |
-| GET | `/api/orders?id=1&status=OPEN` | 我的委託 |
-| GET | `/api/history?symbol=2330&hours=6` | 走勢（最後成交價） |
+| GET | `/api/account` | 目前登入帳戶、持股、資產（帳戶由 session 決定，不接受 id 參數） |
+| GET | `/api/trades?symbol=&side=&from=&to=&limit=20&offset=0` | 目前帳戶的成交（篩選＋分頁） |
+| GET | `/api/orders?status=OPEN` | 目前帳戶的委託 |
+| GET | `/api/history?symbol=2330` | 走勢（最後成交價，固定最近 6 小時、最多 500 筆） |
 | POST | `/api/orders` | 下單（市價或限價） |
 | DELETE | `/api/orders/:id` | 取消委託 |
 | POST | `/api/trade` | 已停用：未登入回 401，登入後固定回 400，請改用 `/api/orders` |
-| POST | `/api/tick` | 手動推進一輪（需登入，開發／demo 用） |
+| POST | `/api/tick` | 手動推進一輪（需登入；設 DEV_SECRET 時需 Bearer 金鑰） |
 | POST | `/api/market/fast-forward` | body `{"ticks":1..60}` 快轉產生歷史（需登入；設 DEV_SECRET 時需 Bearer 金鑰） |
 | POST | `/api/auth/register` / `/api/auth/login` | 註冊／登入（每 IP 5 分鐘 15 次） |
 | POST | `/api/auth/guest` | 訪客快速登入（agar.io 式暱稱） |
@@ -589,7 +589,6 @@ src/
 │  └─ market.js           行情查詢
 ├─ db/
 │  ├─ queries.js          所有 SQL 與 batch 建構
-│  └─ seed.js             種子資料
 └─ schema.sql
 ```
 
@@ -597,7 +596,7 @@ src/
 
 ```js
 // trading.js
-placeOrder(db, { accountId, symbol, side, type, price, shares })
+placeMarketOrder(db, { account_id, symbol, side, type, price, shares, request_id })
   → { ok: true, fills, filledShares, avgPrice, orderId, status }
   | { ok: false, code, message }
 
@@ -627,9 +626,9 @@ snapshot(db, accountId)
 
 ### 11.4 接縫與測試
 
-- `db` 由外部注入（`placeOrder(db, ...)`），不從 `env` 直接抓
+- `db` 由外部注入（`placeMarketOrder(db, ...)`），不從 `env` 直接抓
 - HTTP 層只做 request → 參數、結果 → 狀態碼
-- 測試表面就是 `placeOrder` 的介面
+- 測試表面就是 `placeMarketOrder` 的介面
 - 工具：`vitest` + `@cloudflare/vitest-plugin`（跑在真的 Workers runtime）
 - 單元測試：純函式（驗證、資產計算、撮合排序）
 - 整合測試：真的 Worker + 真的 D1（Miniflare）
