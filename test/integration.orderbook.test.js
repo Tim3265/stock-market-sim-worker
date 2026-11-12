@@ -307,7 +307,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect(s2.status).toBe(200);expect(s2.body).toMatchObject({status:'FILLED',filledShares:4});
   const st=await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=8').first();
   expect(st.frozen_cash).toBe(0);
-  expect(st.cash).toBeCloseTo(100000-440-0.19,2);
+  expect(st.cash).toBeCloseTo(100000-440-0.18,2);
   expect((await env.DB.prepare("SELECT status FROM orders WHERE request_id='split-fee-000001'").first()).status).toBe('FILLED');
  });
  it('回歸：部分成交後取消剩餘，釋放金額不會超過凍結（不會觸發 CHECK 500）',async()=>{
@@ -330,6 +330,32 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await env.DB.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,filled_shares,status,request_id,fee_scheme) VALUES(13,'YZU','BUY','LIMIT',1.13,1,0,'OPEN','float-edge-00001',1)").run();
   await env.DB.prepare("INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(13,'YZU','BUY',1,1.13,1.13,0.01)").run();
   await env.DB.prepare("INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(13,'YZU','BUY',1,1.13,1.13,0.01)").run();
+ });
+ it('回歸：凍結資金大於初始資金時 recharge 仍成功（先撤單並清空凍結）',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash,frozen_cash) VALUES(14,'充',100000,300000,250000)").run();
+  await env.DB.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,request_id,fee_scheme) VALUES(14,'YZU','BUY','LIMIT',44,100,'OPEN','recharge-000001',1)").run();
+  const r=await SELF.fetch(base+'/api/account/recharge',{method:'POST',headers:{Cookie:await cookie(14)}});
+  expect(r.status).toBe(200);
+  const st=await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=14').first();
+  expect(st.frozen_cash).toBe(0);
+  expect(st.cash).toBeGreaterThanOrEqual(100000);
+  expect((await env.DB.prepare("SELECT status FROM orders WHERE request_id='recharge-000001'").first()).status).toBe('CANCELLED');
+ });
+ it('回歸：GET /api/orders 支援 status 篩選',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await order({account_id:1,symbol:'YZU',side:'BUY',type:'LIMIT',price:41,shares:10,request_id:'status-filter-001'});
+  const open=await get('/api/orders?id=1&status=OPEN');
+  expect(open.status).toBe(200);expect(open.body.orders.length).toBeGreaterThan(0);
+  expect(open.body.orders.every(o=>o.status==='OPEN')).toBe(true);
+  const bad=await get('/api/orders?id=1&status=NOPE');
+  expect(bad.status).toBe(400);
+ });
+ it('回歸：下單回應含 lastPrice',async()=>{
+  await get('/api/orderbook?symbol=2330');
+  await env.DB.prepare('UPDATE accounts SET cash=20000000 WHERE id=1').run();
+  const r=await order({account_id:1,symbol:'2330',side:'BUY',type:'MARKET',shares:1,request_id:'lastprice-000001'});
+  expect(typeof r.body.lastPrice).toBe('number');
  });
 });
 

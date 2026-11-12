@@ -15,11 +15,14 @@ export async function book(db,symbol,depth=10){
  const rows=(await prepare(db,"SELECT side,price,SUM(shares-filled_shares) quantity FROM orders WHERE symbol=? AND status IN ('OPEN','PARTIAL') AND type='LIMIT' GROUP BY side,price",symbol).all()).results;
  return {ok:true,stock,bids:rows.filter(x=>x.side==='BUY').sort((a,b)=>b.price-a.price).slice(0,depth),asks:rows.filter(x=>x.side==='SELL').sort((a,b)=>a.price-b.price).slice(0,depth)};
 }
-export async function listOrders(db,accountId){
+export async function listOrders(db,accountId,status){
  if(!Number.isSafeInteger(accountId)||accountId<1)return err('INVALID_INPUT','帳戶錯誤');
+ if(status&&!['OPEN','PARTIAL','FILLED','CANCELLED'].includes(status))return err('INVALID_INPUT','狀態篩選錯誤');
  const account=await prepare(db,'SELECT id,cash,frozen_cash FROM accounts WHERE id=?',accountId).first();
  if(!account)return err('NOT_FOUND','找不到帳戶');
- const result=await prepare(db,'SELECT id,symbol,side,type,price,shares,filled_shares,status,created_at FROM orders WHERE account_id=? ORDER BY id DESC LIMIT 100',accountId).all();
+ const result=status
+  ?await prepare(db,'SELECT id,symbol,side,type,price,shares,filled_shares,status,created_at FROM orders WHERE account_id=? AND status=? ORDER BY id DESC LIMIT 100',accountId,status).all()
+  :await prepare(db,'SELECT id,symbol,side,type,price,shares,filled_shares,status,created_at FROM orders WHERE account_id=? ORDER BY id DESC LIMIT 100',accountId).all();
  return {ok:true,orders:result.results,frozenCash:account.frozen_cash,availableCash:money(cents(account.cash)-cents(account.frozen_cash))};
 }
 export async function cancelOrder(db,accountId,orderId){
@@ -117,9 +120,12 @@ export async function placeMarketOrder(db,input){
   for(const f of plan.fills){
    const buyer=side==='BUY'?accountId:f.accountId,seller=side==='SELL'?accountId:f.accountId;
    const amount=money(cents(f.price)*f.shares);
-   const makerFee=rows.find(row=>row.id===f.orderId)?.fee_scheme?money(feeCents(cents(f.price),f.shares)):0;
+   const makerRow=rows.find(row=>row.id===f.orderId);
+   const mkReserve=n=>cents(f.price)*n+(makerRow?.fee_scheme?feeCents(cents(f.price),n):0);
+   const reserveCents=side==='SELL'?mkReserve(makerRow.remaining)-mkReserve(makerRow.remaining-f.shares):0;
+   const makerFee=makerRow?.fee_scheme?money(feeCents(cents(f.price),f.shares)):0;
    const fillTakerFee=money(feeCents(cents(f.price),f.shares));
-   const buyerFee=side==='BUY'?fillTakerFee:makerFee,sellerFee=side==='SELL'?fillTakerFee:makerFee;
+   const buyerFee=side==='BUY'?fillTakerFee:money(reserveCents-cents(f.price)*f.shares),sellerFee=side==='SELL'?fillTakerFee:makerFee;
    // Legacy per-account trade rows retain the existing portfolio/history API.
    ops.push(prepare(db,"INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(?,?,'BUY',?,?,?,?)",buyer,symbol,f.shares,f.price,amount,buyerFee));
    ops.push(prepare(db,"INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(?,?,'SELL',?,?,?,?)",seller,symbol,f.shares,f.price,amount,sellerFee));
@@ -129,9 +135,7 @@ export async function placeMarketOrder(db,input){
    }else{
     // 逐筆釋放採用「成交前後預扣差額」（reserve(before)-reserve(after)），
     // 多次部分成交的手續費總和恰好等於下單時凍結的金額，不會多扣或少扣。
-    const makerRow=rows.find(row=>row.id===f.orderId);
-    const mkReserve=n=>cents(f.price)*n+(makerRow?.fee_scheme?feeCents(cents(f.price),n):0);
-    const reserve=money(mkReserve(makerRow.remaining)-mkReserve(makerRow.remaining-f.shares));
+    const reserve=money(reserveCents);
     ops.push(prepare(db,'UPDATE accounts SET cash=ROUND(cash-?-?,2),frozen_cash=ROUND(frozen_cash-?,2) WHERE id=?',amount,buyerFee,reserve,buyer));
     ops.push(prepare(db,'UPDATE holdings SET shares=shares-? WHERE account_id=? AND symbol=?',f.shares,seller,symbol));
    }
@@ -159,5 +163,6 @@ async function readResult(db,order){
  const fee=order.fee_scheme?fills.reduce((n,f)=>n+feeCents(cents(f.price),f.shares),0):0;
  const remaining=order.shares-order.filled_shares;
  const cancelReason=order.status==='CANCELLED'&&remaining>0?'IOC_NO_LIQUIDITY':null;
- return {ok:true,orderId:order.id,status:order.status,filledShares:order.filled_shares,remaining,avgPrice:order.filled_shares?money(Math.round(total/order.filled_shares)):null,amount:money(total),fee:money(fee),cancelReason,fills};
+ const stock=await prepare(db,'SELECT price FROM stocks WHERE symbol=?',order.symbol).first();
+ return {ok:true,orderId:order.id,status:order.status,filledShares:order.filled_shares,remaining,avgPrice:order.filled_shares?money(Math.round(total/order.filled_shares)):null,amount:money(total),fee:money(fee),cancelReason,fills,lastPrice:fills.length?fills[fills.length-1].price:(stock?stock.price:null)};
 }
