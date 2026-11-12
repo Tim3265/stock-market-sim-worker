@@ -68,7 +68,7 @@ const report = `# 索引實驗報告（10 萬筆成交資料）
 | 結果 | count=${noIndex[0]['COUNT(*)']}, sum=${noIndex[0]['SUM(amount)']} | count=${withIndex[0]['COUNT(*)']}, sum=${withIndex[0]['SUM(amount)']} |
 
 結論：無索引時為全表掃描（SCAN order_fills）；建立索引後改為 SEARCH ... USING INDEX，
-10 萬筆資料下時間差距約 ${(noIndexMs / Math.max(withIndexMs, 1)).toFixed(1)} 倍。
+10 萬筆資料下，無索引全表掃描約 ${noIndexMs}ms／輪，有索引低於 D1 meta.duration 計時解析度（<1ms），差距約 ${noIndexMs}ms／輪，不宜用「倍數」表達。
 重跑：\`node scripts/benchmark-index.js\`（使用獨立暫存資料庫 .local-benchmark，不影響正式資料）。
 `;
 console.log(report);

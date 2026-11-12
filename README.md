@@ -25,9 +25,9 @@ npm run dev
 
 `npm test` 執行 Workers runtime + Miniflare D1 單元及整合測試。包含價格／時間排序、部分成交、無對手、價格限制、資金與持股守恆、重複請求、並行競爭、交割失敗回復、低庫存及舊資料遷移。
 
-`test/browser.sprint2.cjs` 使用 Playwright 和本機 Chrome，應只連至獨立的測試資料庫。可先用 `wrangler d1 execute` 與 `wrangler d1 migrations apply` 搭配獨立 `--persist-to` 建立測試庫，啟動 8789 埠本機 Worker，再執行 `node test/browser.sprint2.cjs`。此測試會真實買賣，不能指向正式或使用中的資料庫。可用環境變數 `E2E_ORIGIN` 指定另一個隔離測試網址。
+API 行為由 `npm test` 的整合測試透過 Workers runtime 直接呼叫 `SELF.fetch` 覆蓋（不需瀏覽器）。
 
-GitHub Actions 執行 `npm test`；瀏覽器測試目前另外執行。D1 真正部署後的網路、權限與效能尚待現場驗證。
+GitHub Actions 執行 `npm test`。D1 真正部署後的網路、權限與效能尚待現場驗證。
 
 ## 功能範圍
 

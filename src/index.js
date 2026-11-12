@@ -15,6 +15,13 @@ import { runBotActivity } from './domain/botActivity.js';
 import { getActiveEvents } from './domain/events.js';
 
 const DEFAULT_TRADE_LIMIT = 20;
+const upgradedCache = new WeakMap();
+async function isUpgraded(db) {
+  if (upgradedCache.has(db)) return upgradedCache.get(db);
+  const row = await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
+  upgradedCache.set(db, !!row);
+  return !!row;
+}
 const MAX_TRADE_LIMIT = 100;
 
 export default {
@@ -32,14 +39,14 @@ export default {
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  const upgraded = path.startsWith('/api/') && await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
+  const upgraded = path.startsWith('/api/') && await isUpgraded(env.DB);
   if (upgraded) { await maybeTick(env.DB); await matchCrossed(env.DB); await runBotActivity(env.DB); }
   if (path.startsWith('/api/') && !['GET','HEAD'].includes(request.method)) {
     const origin=request.headers.get('Origin');
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
   }
   if (path === '/api/auth/guest' && request.method === 'POST') {
-    if(!await auth.allowAttempt(env.DB,request))return Response.json({ok:false,message:'操作太頻繁，請五分鐘後再試'},{status:429});
+    if(!await auth.allowAttempt(env.DB,request))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
     const input = await request.json().catch(() => ({}));
     const result = await auth.guestLogin(env.DB, input.nickname);
     const secure = url.protocol === 'https:' ? '; Secure' : '';
@@ -48,8 +55,9 @@ async function route(request, env) {
     });
   }
   if (path === '/api/account/recharge' && request.method === 'POST') {
+    if (!await auth.allowAttempt(env.DB, request, 'recharge')) return fail('RATE_LIMITED', '操作太頻繁，請五分鐘後再試');
     const current = await auth.session(env.DB, request);
-    if (!current) return Response.json({ ok: false }, { status: 401 });
+    if (!current) return fail('UNAUTHENTICATED', '請先登入');
     const initialCash = await auth.marketInitialCash(env.DB);
     // 只補現金，不動 initial_cash，報酬率基準維持不變。先撤銷未成交委託、清空凍結，避免 frozen_cash > cash 觸發 CHECK。
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -163,7 +171,7 @@ async function route(request, env) {
     if (!current) return Response.json({ ok: false, code: 'UNAUTHENTICATED', message: '請先登入' }, { status: 401 });
     if (env.DEV_SECRET && request.headers.get('Authorization') !== 'Bearer ' + env.DEV_SECRET)
       return Response.json({ ok: false, code: 'FORBIDDEN', message: '需要開發金鑰' }, { status: 403 });
-    if (!await auth.allowAttempt(env.DB, request)) return Response.json({ ok: false, message: '操作太頻繁，請五分鐘後再試' }, { status: 429 });
+    if (!await auth.allowAttempt(env.DB, request, 'dev')) return fail('RATE_LIMITED', '操作太頻繁，請五分鐘後再試');
     if (upgraded) {
       // 手動 tick 強制推進一輪（用未來時間戳繞過 15 秒間隔），結束後把時鐘拉回現在。
       const state = await env.DB.prepare('SELECT last_tick_at FROM market_state WHERE id=1').first();
@@ -175,16 +183,16 @@ async function route(request, env) {
     return ok({ message: 'tick processed' });
   }
   if(path==='/api/auth/register' && request.method==='POST'){
-    if(!await auth.allowAttempt(env.DB,request))return Response.json({ok:false,message:'操作太頻繁，請五分鐘後再試'},{status:429});
+    if(!await auth.allowAttempt(env.DB,request))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
     const input=await request.json().catch(()=>({}));
     const result=await auth.register(env.DB,input.username,input.password);
-    return result.error?Response.json({ok:false,message:result.error},{status:400}):ok({username:result.username});
+    return result.error?fail('INVALID_INPUT',result.error):ok({username:result.username});
   }
   if(path==='/api/auth/login' && request.method==='POST'){
-    if(!await auth.allowAttempt(env.DB,request))return Response.json({ok:false,message:'操作太頻繁，請五分鐘後再試'},{status:429});
+    if(!await auth.allowAttempt(env.DB,request))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
     const input=await request.json().catch(()=>({}));
     const result=await auth.login(env.DB,input.username,input.password);
-    if(!result)return Response.json({ok:false,message:'帳號或密碼錯誤'},{status:401});
+    if(!result)return fail('UNAUTHENTICATED','帳號或密碼錯誤');
     const secure=url.protocol==='https:'?'; Secure':'';
     return Response.json({ok:true,username:result.username},{headers:{'Set-Cookie':'stock_session='+result.token+'; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800'+secure}});
   }
@@ -194,7 +202,7 @@ async function route(request, env) {
   }
   if(path==='/api/auth/session' && request.method==='GET'){
     const current=await auth.session(env.DB,request);
-    return current?ok({username:current.username}):Response.json({ok:false},{status:401});
+    return current?ok({username:current.username}):fail('UNAUTHENTICATED','請先登入');
   }
   const protectedPath=path==='/api/account'||path==='/api/trades'||path==='/api/trades/export'||path==='/api/trade'||path==='/api/orders'||/^\/api\/orders\/\d+$/.test(path);
   const current=protectedPath?await auth.session(env.DB,request):null;
@@ -222,7 +230,6 @@ async function route(request, env) {
     return ok({symbol,volume:rows});
   }
   if(path==='/api/trades/export' && request.method==='GET'){
-    if(!current)return Response.json({ok:false,code:'UNAUTHENTICATED',message:'請先登入'},{status:401});
     const rows=(await env.DB.prepare(`SELECT t.id,t.symbol,s.name,t.side,t.shares,t.price,t.amount,t.fee_amount,t.created_at
       FROM trades t JOIN stocks s ON s.symbol=t.symbol WHERE t.account_id=? ORDER BY t.id`).bind(current.account_id).all()).results;
     const header='id,symbol,name,side,shares,price,amount,fee,created_at';
@@ -258,7 +265,7 @@ async function route(request, env) {
     if (!current) return Response.json({ ok: false, code: 'UNAUTHENTICATED', message: '請先登入' }, { status: 401 });
     if (env.DEV_SECRET && request.headers.get('Authorization') !== 'Bearer ' + env.DEV_SECRET)
       return Response.json({ ok: false, code: 'FORBIDDEN', message: '需要開發金鑰' }, { status: 403 });
-    if (!await auth.allowAttempt(env.DB, request)) return Response.json({ ok: false, message: '操作太頻繁，請五分鐘後再試' }, { status: 429 });
+    if (!await auth.allowAttempt(env.DB, request, 'dev')) return fail('RATE_LIMITED', '操作太頻繁，請五分鐘後再試');
     let input;try{input=await request.json();}catch{return fail('INVALID_INPUT','請求內容必須是 JSON');}
     const ticks=Math.min(Math.max(Math.trunc(Number(input.ticks??1)),1),60);
     for(let i=0;i<ticks;i++){
@@ -313,7 +320,7 @@ async function route(request, env) {
 // ---------- GET /api/stocks ----------
 async function listStocks(env) {
   let stocks = await queries.listStocks(env.DB);
-  if(await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first()) stocks=(await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
+  if(await isUpgraded(env.DB)) stocks=(await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
   return ok({ stocks });
 }
 

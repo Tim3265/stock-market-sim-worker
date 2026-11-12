@@ -250,6 +250,7 @@ async function login(){
 }
 
 $('#btn-play').onclick=login;
+$('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 
 async function poll(){
   state=await api('/api/live?symbol='+selected);
@@ -259,7 +260,6 @@ async function poll(){
 }
 
 function start(){
-  $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   $('#btn-logout').onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.reload();};
   $('#btn-recharge').onclick=async()=>{await api('/api/account/recharge',{method:'POST'});poll();};
   $('#btn-buy').onclick=()=>place('BUY');
@@ -374,7 +374,7 @@ function renderPortfolio(){
   $('#portfolio-summary').innerHTML=a?[
     ['可用現金','$'+fmt(a.available_cash!=null?a.available_cash:a.cash)],
     ['凍結現金','$'+fmt(a.frozen_cash||0)],
-    ['持股市值','$'+fmt((a.cash||0)+ (state.holdings||[]).reduce((s,h)=>s+h.market_value,0) - (a.cash||0))],
+    ['持股市值','$'+fmt((state.holdings||[]).reduce((s,h)=>s+h.market_value,0))],
     ['總資產','$'+fmt((a.cash||0)+(state.holdings||[]).reduce((s,h)=>s+h.market_value,0))]
   ].map(p=>'<div><div style="color:var(--dim); font-size:10px">'+p[0]+'</div><div style="color:var(--green)">'+p[1]+'</div></div>').join(''):'請先登入';
   const hb=$('#holdings-table tbody');

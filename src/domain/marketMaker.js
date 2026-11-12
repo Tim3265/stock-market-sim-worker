@@ -48,17 +48,22 @@ export async function maybeTick(db, now = Date.now()) {
       const qty=Math.max(1,Math.floor(stock.liquidity*factor));
       const buy=Math.max(0.01,Math.max(low,round(center*(1-offset))));
       const sell=Math.min(high,Math.max(0.01,round(center*(1+offset))));
-      const buyCents=Math.round(buy*100),feePerShare=Math.ceil(buyCents*399/1000000), buyQty=Math.min(qty,Math.floor(remainingCash/(buyCents+feePerShare)));
+      const buyCents=Math.round(buy*100);
+      const feeFor=q=>Math.ceil(buyCents*q*399/1000000);
+      let buyQty=Math.min(qty,Math.floor(remainingCash/buyCents));
+      while(buyQty>0&&buyCents*buyQty+feeFor(buyQty)>remainingCash)buyQty--;
       const sellQty=Math.min(qty,remainingShares);
-      if(buyQty>0){const reserved=(buyCents+feePerShare)*buyQty;remainingCash-=reserved;totalCash=round(totalCash+reserved/100);prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,?,'BUY','LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,buy,buyQty));}
+      if(buyQty>0){const reserved=buyCents*buyQty+feeFor(buyQty);remainingCash-=reserved;totalCash=round(totalCash+reserved/100);prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,?,'BUY','LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,buy,buyQty));}
       if(sellQty>0){remainingShares-=sellQty;reservedShares+=sellQty;prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,?,'SELL','LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,sell,sellQty));}
     }
     prepared.push(db.prepare('UPDATE holdings SET frozen_shares=? WHERE account_id=? AND symbol=?').bind(reservedShares,BOT,stock.symbol));
   }
   prepared.push(db.prepare('UPDATE accounts SET frozen_cash=? WHERE id=?').bind(totalCash,BOT));
   // 六檔流動性加權指數（以當日參考價為基期 1000），每 tick 記一筆歷史供圖表。
+  const indexSymbols=['2330','2317','2454','3711','YZU','YOUJIAN'];
   let base=0,cur=0;
   for(const stock of stocks){
+    if(!indexSymbols.includes(stock.symbol))continue;
     const w=Number(stock.liquidity)||0;
     base+=w*(refBySymbol.get(stock.symbol)??Number(stock.price));
     cur+=w*Number(stock.price);

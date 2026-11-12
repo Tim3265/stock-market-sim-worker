@@ -47,7 +47,7 @@ export async function runBotActivity(db){
   }
  }
  const random=Math.sin(tick*1827+slot*93)*43758.5453;
- if(tick%2===0 && random-Math.floor(random)<0.005){
+ if(random-Math.floor(random)<0.005){
   await db.prepare('INSERT INTO bot_state(account_id,symbol,panic_until) VALUES(1000003,?,?) ON CONFLICT(account_id,symbol) DO UPDATE SET panic_until=MAX(panic_until,excluded.panic_until)').bind(symbol,tick+4).run();
  }
  const active=(await db.prepare('SELECT symbol FROM bot_state WHERE account_id=1000003 AND panic_until>=? ORDER BY symbol').bind(tick).all()).results;
