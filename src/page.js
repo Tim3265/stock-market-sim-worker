@@ -61,7 +61,13 @@ export const PAGE_HTML = `<!DOCTYPE html>
   header{
     display:flex; align-items:center; gap:16px; flex-wrap:wrap;
     padding:12px 16px; border-bottom:2px solid var(--line); background:var(--panel);
+  }
+  /* 分頁標籤 + 下單列固定在頂部 */
+  .sticky-top{
     position:sticky; top:0; z-index:10;
+    background:var(--bg);
+    padding:10px 0; display:flex; flex-direction:column; gap:8px;
+    border-bottom:2px solid var(--line);
   }
   header .logo{color:var(--gold); font-size:14px; text-shadow:2px 2px 0 #b8860b;}
   #index-chip{display:flex; align-items:center; gap:10px; padding:6px 12px; background:var(--panel2); border:2px solid var(--line);}
@@ -89,14 +95,18 @@ export const PAGE_HTML = `<!DOCTYPE html>
   #stock-detail h2{font-size:16px; color:var(--gold);}
   #detail-chart{width:100%; height:180px; background:#0a0c16; border:2px solid var(--line);}
   .book-wrap{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
-  @media(max-width:720px){.book-wrap{grid-template-columns:1fr;}}
+  @media(max-width:720px){
+    .book-wrap{grid-template-columns:1fr;}
+    input{font-size:16px;} /* iOS 聚焦時會自動放大，字級小於 16px 會造成畫面跳動 */
+    button{touch-action:manipulation;} /* 手機點擊不延遲 */
+  }
   .book-col h3{font-size:11px; margin-bottom:8px; color:var(--dim);}
   .book-row{display:flex; justify-content:space-between; padding:3px 6px; font-size:10px;}
   .book-row .bid{color:var(--green);} .book-row .ask{color:var(--red);}
   .book-row .bar{height:6px; margin-top:2px;}
   .bar.bid{background:rgba(61,220,120,.35);} .bar.ask{background:rgba(255,84,112,.35);}
 
-  #order-form{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  #order-form{display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:10px;}
   #order-form input{width:110px;}
   #order-msg{font-size:10px; min-height:18px;}
   #order-msg.ok{color:var(--green);} #order-msg.err{color:var(--red);}
@@ -137,18 +147,35 @@ export const PAGE_HTML = `<!DOCTYPE html>
     <button class="ghost" id="btn-logout">登出</button>
   </header>
   <main>
-    <nav class="tabs">
-      <button data-tab="market" class="active">市場</button>
-      <button data-tab="portfolio">持股資產</button>
-      <button data-tab="orders">我的委託</button>
-      <button data-tab="fills">市場成交</button>
-      <button data-tab="leaderboard">排行榜</button>
-      <button data-tab="bots">機器人</button>
-    </nav>
+    <div class="sticky-top">
+      <nav class="tabs">
+        <button data-tab="market" class="active">市場</button>
+        <button data-tab="portfolio">持股資產</button>
+        <button data-tab="orders">我的委託</button>
+        <button data-tab="fills">市場成交</button>
+        <button data-tab="leaderboard">排行榜</button>
+        <button data-tab="bots">機器人</button>
+      </nav>
+      <div id="order-form" class="panel">
+        <span id="ord-sym" style="color:var(--blue); font-size:10px;"></span>
+        <input id="ord-shares" type="number" min="1" placeholder="股數" inputmode="numeric">
+        <input id="ord-price" type="number" step="0.01" placeholder="限價（市價留空）" inputmode="decimal">
+        <button class="buy" id="btn-buy">買進</button>
+        <button class="sell" id="btn-sell">賣出</button>
+        <span id="order-msg"></span>
+      </div>
+    </div>
 
     <section id="tab-market">
       <div id="stock-grid"></div>
-      <div id="stock-detail" class="panel hidden"></div>
+      <div id="stock-detail" class="panel hidden">
+        <h2 id="detail-title"></h2>
+        <svg id="detail-chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+        <div class="book-wrap">
+          <div class="book-col panel" style="padding:10px"><h3>賣出（十檔）</h3><div id="asks-rows"></div></div>
+          <div class="book-col panel" style="padding:10px"><h3>買入（十檔）</h3><div id="bids-rows"></div></div>
+        </div>
+      </div>
     </section>
 
     <section id="tab-portfolio" class="hidden">
@@ -232,6 +259,8 @@ function start(){
   $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   $('#btn-logout').onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.reload();};
   $('#btn-recharge').onclick=async()=>{await api('/api/account/recharge',{method:'POST'});poll();};
+  $('#btn-buy').onclick=()=>place('BUY');
+  $('#btn-sell').onclick=()=>place('SELL');
   document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;
     document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.toggle('active',x===b));
     ['market','portfolio','orders','fills','leaderboard','bots'].forEach(t=>$('#tab-'+t).classList.toggle('hidden',t!==tab));
@@ -287,28 +316,17 @@ function renderDetail(){
   const hist=state.histories[selected]||[];
   const chg=pct(s.price,s.ref_price);
   const color=chg>=0?'var(--green)':'var(--red)';
+  // 只更新標題、走勢圖與盤口；下單表單維持不動，避免輪詢時搶走輸入框焦點
+  $('#detail-title').innerHTML=s.name+' '+s.symbol+' $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
+  $('#ord-sym').textContent='下單：'+s.symbol+' '+s.name;
+  $('#detail-chart').innerHTML=hist.length>1?(()=>{const vals=hist.map(p=>Number(p.price));const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
+    const pts=vals.map((v,i)=>(i*(600/(vals.length-1))).toFixed(1)+','+(170-((v-min)/span)*160).toFixed(1)).join(' ');
+    return '<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="3"/>';})():'<polyline points="" fill="none"/>';
   const maxQ=Math.max(1,...[...state.bids,...state.asks].map(b=>b.quantity));
   const row=(b,side)=>'<div class="book-row"><span class="'+side+'">$'+fmt(b.price)+'</span><span>'+b.quantity+'</span></div>'
     +'<div class="bar '+side+'" style="width:'+Math.round(b.quantity/maxQ*100)+'%"></div>';
-  d.innerHTML='<h2>'+s.name+' '+s.symbol+' $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span></h2>'
-    +'<svg id="detail-chart" viewBox="0 0 600 180" preserveAspectRatio="none">'
-    +(hist.length>1?(()=>{const vals=hist.map(p=>Number(p.price));const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
-      const pts=vals.map((v,i)=>(i*(600/(vals.length-1))).toFixed(1)+','+(170-((v-min)/span)*160).toFixed(1)).join(' ');
-      return '<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="3"/>';})():'')
-    +'</svg>'
-    +'<div class="book-wrap">'
-    +'<div class="book-col panel" style="padding:10px"><h3>賣出（十檔）</h3>'+state.asks.slice().reverse().map(b=>row(b,'ask')).join('')+'</div>'
-    +'<div class="book-col panel" style="padding:10px"><h3>買入（十檔）</h3>'+state.bids.map(b=>row(b,'bid')).join('')+'</div>'
-    +'</div>'
-    +'<div id="order-form">'
-    +'<input id="ord-shares" type="number" min="1" placeholder="股數">'
-    +'<input id="ord-price" type="number" step="0.01" placeholder="限價（市價留空）">'
-    +'<button class="buy" id="btn-buy">買進</button>'
-    +'<button class="sell" id="btn-sell">賣出</button>'
-    +'<span id="order-msg"></span>'
-    +'</div>';
-  $('#btn-buy').onclick=()=>place('BUY');
-  $('#btn-sell').onclick=()=>place('SELL');
+  $('#asks-rows').innerHTML=state.asks.slice().reverse().map(b=>row(b,'ask')).join('');
+  $('#bids-rows').innerHTML=state.bids.map(b=>row(b,'bid')).join('');
 }
 
 async function place(side){
@@ -366,6 +384,9 @@ async function renderBots(){
       +(hs.map(h=>h.symbol+' '+h.shares+' 股').join('｜')||'無持股')+'</div></div>';
   }).join('');
 }
+
+// 瀏覽器記得登入狀態（session cookie 有效）時，重新整理直接進入同一帳號
+api('/api/auth/session').then(r=>{if(r.ok){$('#login-screen').classList.add('hidden');$('#app').classList.remove('hidden');start();}});
 </script>
 </body>
 </html>`;
