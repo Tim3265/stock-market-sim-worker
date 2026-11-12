@@ -6,10 +6,10 @@ const assert = require('node:assert/strict');
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await page.goto(process.env.E2E_ORIGIN || 'http://127.0.0.1:8790');
-    await page.locator('#btn-guest-login').click();
-    await page.waitForSelector('[data-chart-symbol]');
+    await page.locator('#btn-play').click();
+    await page.waitForSelector('[data-sym]');
     const result = await page.evaluate(() => {
-      const card = document.querySelector('[data-chart-symbol]');
+      const card = document.querySelector('[data-sym]');
       const svg = card.querySelector('svg'), note = card.querySelector('.chart-time-note');
       renderMiniPolyline(svg, note, [
         { price: 10, created_at: '2026-11-09 01:00:00' },

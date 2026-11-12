@@ -1,4 +1,4 @@
-const { chromium } = require('D:/software/Project/node_modules/playwright');
+const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 
 (async () => {
@@ -9,13 +9,13 @@ const assert = require('node:assert/strict');
     page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
     
     await page.goto(process.env.E2E_ORIGIN || 'http://127.0.0.1:8790/');
-    await page.locator('#username').fill('mob_' + Date.now());
+    await page.locator('#nickname').fill('mob_' + Date.now());
     await page.locator('#password').fill('example-pass-123');
-    await page.locator('#register').click();
+    await page.locator('#btn-play').click();
     await page.waitForFunction(() => document.querySelector('#auth-error').textContent.includes('註冊成功'));
     await page.getByRole('button', { name: '登入', exact: true }).click();
     await page.locator('#app-panel').waitFor();
-    await page.waitForSelector('[data-chart-symbol]');
+    await page.waitForSelector('[data-sym]');
     
     await page.getByRole('button', { name: 'GG 行情買進' }).click();
     assert((await page.locator('#trade-title').textContent()).includes('GG'));

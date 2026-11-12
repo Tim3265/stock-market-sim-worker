@@ -168,7 +168,7 @@ deviation = (price − fair_price) / fair_price
 drift     = −0.05 × deviation        -- 偏離 10% 拉回 0.5%
 noise     = 介於 ±volatility 的可重現擾動，預設約 0.3%
 change    = drift + noise
-中價       = price × (1 + change)，限制 ±3%
+中價       = price × (1 + change)，限制 ±6%
 ```
 
 這個中價只用來**移動造市商的報價中心**；真正的 `price` 仍然只由成交改變。
@@ -181,8 +181,8 @@ change    = drift + noise
 | 機器人 | 觸發 | 行為 |
 |---|---|---|
 | 造市商 | 每 tick | 取消自己所有掛單 → 以中價為中心重掛 5 層買賣單 |
-| 動能派 | 每 3 tick | 近 5 筆成交價連漲 > 2% → 市價買；連跌 > 2% → 市價賣 |
-| 價值派 | 每 5 tick | `price < fair × 0.97` → 限價買；`price > fair × 1.03` → 限價賣 |
+| 動能派 | 每 6 tick | 近 5 筆成交價連漲 > 2% → 市價買；連跌 > 2% → 市價賣 |
+| 價值派 | 每 10 tick | `price < fair × 0.97` → 限價買；`price > fair × 1.03` → 限價賣 |
 | 恐慌賣壓 | 每 tick 0.5% 機率 | 進入恐慌 5 個 tick，每 tick 市價賣出持股的 20% |
 
 機器人也有現金與持股，**不能超賣、不能透支**。
@@ -514,7 +514,7 @@ UPDATE market_state
 | GET | `/api/histories` / `/api/history?symbol=` | 六檔走勢 / 單檔走勢 |
 | GET | `/api/leaderboard` | 排行榜（含機器人，標 is_bot） |
 | GET | `/api/trades/export` | 成交 CSV 匯出（需登入） |
-| POST | `/api/account/recharge` | 重置為初始資金（需登入） |
+| POST | `/api/account/recharge` | 重置現金為目前市場初始資金並撤銷未成交委託（需登入；`initial_cash` 不變，報酬率基準維持） |
 
 > 需登入的 API：`/api/orders`、`/api/trades`、`/api/trades/export`、`/api/account`、`/api/account/recharge`、`/api/tick`、`/api/market/fast-forward`（未帶 session 回 401）。其餘 GET 行情類 API 公開。
 
@@ -548,6 +548,7 @@ UPDATE market_state
 | `NOT_YOUR_ORDER` | 403 | 不能取消別人的委託 |
 | `NOT_FOUND` | 404 | 帳戶／股票不存在 |
 | `CONFLICT` | 409 | 撮合鎖競爭，請重試 |
+| `INVALID_STATE` | 400 | 資料違反資料庫約束（CHECK 觸發） |
 
 統一格式：`{ ok: true, ... }` 或 `{ ok: false, code, message }`。
 
