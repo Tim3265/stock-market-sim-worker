@@ -357,6 +357,21 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const r=await order({account_id:1,symbol:'2330',side:'BUY',type:'MARKET',shares:1,request_id:'lastprice-000001'});
   expect(typeof r.body.lastPrice).toBe('number');
  });
+ it('回歸：matchCrossed 撮合全額凍結的買單時手續費與釋放一致，不會觸發 CHECK 500',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(15,'全凍',121.55,121.55)").run();
+  const buy=await order({account_id:15,symbol:'YZU',side:'BUY',type:'LIMIT',price:40.50,shares:3,request_id:'mc-frozen-000001'});
+  expect(buy.body.status).toBe('OPEN');
+  expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=15').first()).toEqual({cash:121.55,frozen_cash:121.55});
+  // 造市商賣單改價到 40.50，下一個請求觸發 matchCrossed 穿價撮合
+  await env.DB.prepare("UPDATE orders SET price=40.50, shares=1, filled_shares=0 WHERE id=(SELECT id FROM orders WHERE account_id=1000000 AND symbol='YZU' AND side='SELL' AND status='OPEN' ORDER BY id LIMIT 1)").run();
+  const r=await get('/api/stocks');
+  expect(r.status).toBe(200);
+  const st=await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=15').first();
+  expect(st.frozen_cash).toBeLessThanOrEqual(st.cash);
+  expect(st.frozen_cash).toBeCloseTo(81.04,2);
+  expect(st.cash).toBeCloseTo(81.04,2);
+ });
 });
 
 describe("黑天鵝與市場快訊 API", () => {

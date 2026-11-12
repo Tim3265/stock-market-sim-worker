@@ -58,7 +58,7 @@ export async function matchCrossed(db){
   const shares=Math.min(pair.bid_qty,pair.ask_qty),price=pair.bid_id<pair.ask_id?pair.bid:pair.ask;
   const bidReserve=n=>cents(pair.bid)*n+(pair.bid_fee?feeCents(cents(pair.bid),n):0);
   const amount=money(cents(price)*shares),reserved=money(bidReserve(pair.bid_qty)-bidReserve(pair.bid_qty-shares));
-  const buyerFee=pair.bid_fee?money(feeCents(cents(price),shares)):0,sellerFee=pair.ask_fee?money(feeCents(cents(price),shares)):0;
+  const buyerFee=pair.bid_fee?money(bidReserve(pair.bid_qty)-bidReserve(pair.bid_qty-shares)-cents(pair.bid)*shares):0,sellerFee=pair.ask_fee?money(feeCents(cents(price),shares)):0;
   const maker=Math.min(pair.bid_id,pair.ask_id),taker=Math.max(pair.bid_id,pair.ask_id);
   const ops=[
    prepare(db,'UPDATE market_state SET match_seq=match_seq+1 WHERE id=1 AND match_seq=?',version.match_seq),
@@ -76,7 +76,7 @@ export async function matchCrossed(db){
    prepare(db,"INSERT INTO price_history(symbol,price,source) VALUES(?,?,'TRADE')",pair.symbol,price),
    db.prepare('DELETE FROM transaction_guard')
   ];
-  try{await db.batch(ops);}catch(e){if(String(e).includes('market_revision_guard'))continue;throw e;}
+  try{await db.batch(ops);}catch(e){const m=String(e);if(m.includes('market_revision_guard'))continue;if(m.includes('CHECK constraint failed'))break;throw e;}
  }
 }
 export async function placeMarketOrder(db,input){

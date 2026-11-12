@@ -52,12 +52,21 @@ async function route(request, env) {
     if (!current) return Response.json({ ok: false }, { status: 401 });
     const initialCash = await auth.marketInitialCash(env.DB);
     // 只補現金，不動 initial_cash，報酬率基準維持不變。先撤銷未成交委託、清空凍結，避免 frozen_cash > cash 觸發 CHECK。
-    await env.DB.batch([
-      env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=? AND status IN ('OPEN','PARTIAL')").bind(current.account_id),
-      env.DB.prepare('UPDATE accounts SET frozen_cash=0 WHERE id=?').bind(current.account_id),
-      env.DB.prepare('UPDATE holdings SET frozen_shares=0 WHERE account_id=?').bind(current.account_id),
-      env.DB.prepare('UPDATE accounts SET cash=? WHERE id=?').bind(initialCash, current.account_id),
-    ]);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const version = await env.DB.prepare('SELECT match_seq FROM market_state WHERE id=1').first();
+      try {
+        await env.DB.batch([
+          env.DB.prepare('UPDATE market_state SET match_seq=match_seq+1 WHERE id=1 AND match_seq=?').bind(version.match_seq),
+          env.DB.prepare('INSERT INTO transaction_guard(value) SELECT changes()'),
+          env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=? AND status IN ('OPEN','PARTIAL')").bind(current.account_id),
+          env.DB.prepare('UPDATE accounts SET frozen_cash=0 WHERE id=?').bind(current.account_id),
+          env.DB.prepare('UPDATE holdings SET frozen_shares=0 WHERE account_id=?').bind(current.account_id),
+          env.DB.prepare('UPDATE accounts SET cash=? WHERE id=?').bind(initialCash, current.account_id),
+          env.DB.prepare('DELETE FROM transaction_guard'),
+        ]);
+        break;
+      } catch (e) { if (String(e).includes('market_revision_guard')) continue; throw e; }
+    }
     return ok({ message: '已充值千萬籌碼！' });
   }
   if (path === '/api/live' && request.method === 'GET') {

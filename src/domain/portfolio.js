@@ -36,6 +36,14 @@ export async function snapshot(db, accountId) {
   }
 
   const holdings = await queries.listHoldings(db, accountId);
+  // 舊版 schema（測試用 v1）沒有 frozen_cash 欄位時視為 0。
+  let frozenCash = 0;
+  try {
+    const accRow = await db.prepare('SELECT frozen_cash FROM accounts WHERE id=?').bind(accountId).first();
+    frozenCash = Number(accRow?.frozen_cash ?? 0);
+  } catch { /* v1 schema 無 frozen_cash 欄位 */ }
+  account.frozenCash = frozenCash;
+  account.availableCash = Math.round((Number(account.cash) - frozenCash) * 100) / 100;
   const summary = computeSummary({
     cash: account.cash,
     initialCash: account.initial_cash,
