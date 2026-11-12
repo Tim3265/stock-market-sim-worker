@@ -15,11 +15,19 @@ export async function allowAttempt(db,request){
  return row.attempts<=15;
 }
 function same(a,b){if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;}
+async function newAccountId(db){
+ for(let i=0;i<5;i++){
+  const id=10000000+crypto.getRandomValues(new Uint32Array(1))[0];
+  if(!await db.prepare('SELECT id FROM accounts WHERE id=?').bind(id).first())return id;
+ }
+ throw new Error('ACCOUNT_ID_EXHAUSTED');
+}
+
 export async function register(db,username,password){
  if(typeof username!=='string'||!/^[a-zA-Z0-9_]{3,24}$/.test(username)||typeof password!=='string'||password.length<8||password.length>128)return {error:'帳號請使用 3 至 24 個英數字或底線，密碼至少 8 個字元'};
  const salt=randomHex(16),hash=await derive(password,salt);
  try{
-  const id=10000000+crypto.getRandomValues(new Uint32Array(1))[0];
+  const id=await newAccountId(db);
   const initialCash = await marketInitialCash(db);
   await db.batch([db.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,?,?)').bind(id,username,initialCash,initialCash),db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash) VALUES(?,?,?,?)').bind(id,username,salt,hash)]);
   return {accountId:id,username};
@@ -58,7 +66,7 @@ export async function guestLogin(db, nickname) {
  const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '') || ('Whale_' + rand);
  const username = baseName.slice(0, 12) + '_' + randomHex(8);
  const salt = randomHex(16), hash = await derive('guest-token-' + rand, salt);
- const id = 10000000 + crypto.getRandomValues(new Uint32Array(1))[0];
+ const id = await newAccountId(db);
  const initialCash = await marketInitialCash(db);
  await db.batch([
   db.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,?,?)').bind(id, username, initialCash, initialCash),
