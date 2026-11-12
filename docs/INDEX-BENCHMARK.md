@@ -9,6 +9,6 @@
 | 結果 | count=2, sum=69000 | count=2, sum=69000 |
 
 結論：無索引時為全表掃描（SCAN order_fills）；建立索引後改為 SEARCH ... USING INDEX，
-10 萬筆資料下時間差距約 8.0 倍。
+10 萬筆資料下，有索引為 SEARCH（約 0ms，D1 meta.duration 低於解析度），無索引為全表 SCAN（約 8ms），差距約 8ms／輪，而非字面「8 倍」以上。
 重跑：`node scripts/benchmark-index.js`（使用獨立暫存資料庫 .local-benchmark，不影響正式資料）。
 

@@ -65,14 +65,14 @@ export async function guestLogin(db, nickname) {
  const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 12) : '大戶_' + rand;
  const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '') || ('Whale_' + rand);
  const username = baseName.slice(0, 12) + '_' + randomHex(8);
- const salt = randomHex(16), hash = await derive('guest-token-' + rand, salt);
+ const salt = randomHex(16), hash = await derive(randomHex(16), salt);
  const id = await newAccountId(db);
  const initialCash = await marketInitialCash(db);
  await db.batch([
   db.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,?,?)').bind(id, username, initialCash, initialCash),
   db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash) VALUES(?,?,?,?)').bind(id, username, salt, hash)
  ]);
- const token = randomHex(32), tokenHash = await digest(token), expires = Date.now() + 30 * 86400000;
+ const token = randomHex(32), tokenHash = await digest(token), expires = Date.now() + 7 * 86400000;
  await db.prepare('INSERT INTO player_sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').bind(tokenHash, id, expires).run();
  return { token, accountId: id, username };
 }

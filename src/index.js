@@ -45,14 +45,15 @@ async function route(request, env) {
     const result = await auth.guestLogin(env.DB, input.nickname);
     const secure = url.protocol === 'https:' ? '; Secure' : '';
     return Response.json({ ok: true, username: result.username }, {
-      headers: { 'Set-Cookie': 'stock_session=' + result.token + '; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000' + secure }
+      headers: { 'Set-Cookie': 'stock_session=' + result.token + '; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800' + secure }
     });
   }
   if (path === '/api/account/recharge' && request.method === 'POST') {
     const current = await auth.session(env.DB, request);
     if (!current) return Response.json({ ok: false }, { status: 401 });
     const initialCash = await auth.marketInitialCash(env.DB);
-    await env.DB.prepare('UPDATE accounts SET cash=?, initial_cash=? WHERE id=?').bind(initialCash, initialCash, current.account_id).run();
+    // 只補現金，不動 initial_cash，報酬率基準維持不變。
+    await env.DB.prepare('UPDATE accounts SET cash=? WHERE id=?').bind(initialCash, current.account_id).run();
     return ok({ message: '已充值千萬籌碼！' });
   }
   if (path === '/api/live' && request.method === 'GET') {
@@ -144,6 +145,10 @@ async function route(request, env) {
     return ok({ fills });
   }
   if (path === '/api/tick' && request.method === 'POST') {
+    // 開發／demo 用：需要登入，避免匿名請求推進市場、燒 D1 寫入額度。
+    const current = await auth.session(env.DB, request);
+    if (!current) return Response.json({ ok: false, code: 'UNAUTHENTICATED', message: '請先登入' }, { status: 401 });
+    if (!await auth.allowAttempt(env.DB, request)) return Response.json({ ok: false, message: '操作太頻繁，請五分鐘後再試' }, { status: 429 });
     if (upgraded) {
       await maybeTick(env.DB);
       await matchCrossed(env.DB);
@@ -230,6 +235,12 @@ async function route(request, env) {
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
   if (path === '/api/market/fast-forward' && request.method === 'POST') {
+    // 開發／demo 用：需要登入；若環境設定 DEV_SECRET 則需帶 Authorization: Bearer。
+    const current = await auth.session(env.DB, request);
+    if (!current) return Response.json({ ok: false, code: 'UNAUTHENTICATED', message: '請先登入' }, { status: 401 });
+    if (env.DEV_SECRET && request.headers.get('Authorization') !== 'Bearer ' + env.DEV_SECRET)
+      return Response.json({ ok: false, code: 'FORBIDDEN', message: '需要開發金鑰' }, { status: 403 });
+    if (!await auth.allowAttempt(env.DB, request)) return Response.json({ ok: false, message: '操作太頻繁，請五分鐘後再試' }, { status: 429 });
     let input;try{input=await request.json();}catch{return fail('INVALID_INPUT','請求內容必須是 JSON');}
     const ticks=Math.min(Math.max(Math.trunc(Number(input.ticks??1)),1),60);
     for(let i=0;i<ticks;i++){
@@ -237,6 +248,8 @@ async function route(request, env) {
       await matchCrossed(env.DB);
       await runBotActivity(env.DB);
     }
+    // 快轉會把 last_tick_at 推到未來，結束後重置為現在，避免市場停擺。
+    if (upgraded) await env.DB.prepare('UPDATE market_state SET last_tick_at=? WHERE id=1').bind(Date.now()).run();
     return ok({message:`已快轉 ${ticks} 輪`,ticks});
   }
   if (path === '/api/orders' && request.method === 'GET') {
@@ -324,21 +337,6 @@ async function getTrades(env, url, accountId) {
   return ok({ trades:trades.slice(0,limit),hasMore:trades.length>limit,offset });
 }
 
-// ---------- POST /api/trade ----------
-async function postTrade(request, env) {
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return fail("INVALID_INPUT", "請求內容必須是 JSON");
-  }
-
-  const result = await executeTrade(env.DB, body);
-  if (!result.ok) return fail(result.code, result.message);
-
-  return ok({ trade: result.trade });
-}
-
 // ---------- 六檔加權指數 ----------
 // 以流動性為權重、當日參考價為基期（1000點），反映六檔整體漲跌。
 async function computeIndex(db) {
@@ -354,9 +352,3 @@ async function computeIndex(db) {
   return base > 0 ? Math.round(1000 * cur / base * 100) / 100 : 1000;
 }
 
-// ---------- 小工具 ----------
-function parsePositiveInt(raw, fallback) {
-  if (raw === null || raw === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}

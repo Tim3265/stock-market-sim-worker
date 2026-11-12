@@ -79,7 +79,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
   const sell=await order({account_id:2,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:5,request_id:'resting-sell-test-1'});
   expect(sell.body).toMatchObject({status:'FILLED',filledShares:5});
-  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:220.08});
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:220.09});
   const playerOrders=await get('/api/orders?id=1');
   expect(playerOrders.body.orders[0]).toMatchObject({status:'PARTIAL',filled_shares:5});
  });
@@ -248,6 +248,50 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect(small.body.filledShares).toBe(1560);expect(small.body.remaining).toBe(8440);
   expect(new Set(large.body.fills.map(f=>f.price)).size).toBe(1);
   expect(new Set(small.body.fills.map(f=>f.price)).size).toBeGreaterThan(1);
+ });
+ it('回歸：資金全凍結的掛單買方仍可成交（trg_trade_buy_guard 檢查總現金）',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(3,'丙',440.18,440.18)").run();
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(4,'丁',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares) VALUES(4,'YZU',10)").run();
+  const buy=await order({account_id:3,symbol:'YZU',side:'BUY',type:'LIMIT',price:44,shares:10,request_id:'frozen-fill-00001'});
+  expect(buy.body.status).toBe('OPEN');
+  expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=3').first()).toEqual({cash:440.18,frozen_cash:440.18});
+  await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
+  const sell=await order({account_id:4,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:10,request_id:'frozen-fill-00002'});
+  expect(sell.status).toBe(200);expect(sell.body).toMatchObject({status:'FILLED',filledShares:10});
+  expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=3').first()).toEqual({cash:0,frozen_cash:0});
+ });
+ it('回歸：掛單買方分兩次部分成交後凍結資金歸零且狀態為 FILLED',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(5,'戊',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(6,'己',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares) VALUES(6,'YZU',10)").run();
+  const buy=await order({account_id:5,symbol:'YZU',side:'BUY',type:'LIMIT',price:44,shares:10,request_id:'partial-fee-00001'});
+  expect(buy.body.status).toBe('OPEN');
+  await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
+  const s1=await order({account_id:6,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:5,request_id:'partial-fee-00002'});
+  expect(s1.body).toMatchObject({status:'FILLED',filledShares:5});
+  const s2=await order({account_id:6,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:5,request_id:'partial-fee-00003'});
+  expect(s2.status).toBe(200);expect(s2.body).toMatchObject({status:'FILLED',filledShares:5});
+  const st5=await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=5').first();expect(st5.frozen_cash).toBe(0);expect(st5.cash).toBeCloseTo(100000-440-0.18,2);
+  expect((await env.DB.prepare("SELECT status FROM orders WHERE request_id='partial-fee-00001'").first()).status).toBe('FILLED');
+ });
+ it('回歸：直接寫入 trades 超出總現金時被資料庫觸發器擋下',async()=>{
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(7,'庚',100,100)").run();
+  await expect(env.DB.prepare("INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(7,'YZU','BUY',1,200,200,1)").run()).rejects.toThrow(/INSUFFICIENT_CASH/);
+ });
+ it('回歸：未登入不能快轉或手動 tick，登入後快轉不會把市場時鐘推到未來',async()=>{
+  const anon=await SELF.fetch(base+'/api/market/fast-forward',{method:'POST',headers:{'content-type':'application/json'},body:'{"ticks":2}'});
+  expect(anon.status).toBe(401);
+  const anonTick=await SELF.fetch(base+'/api/tick',{method:'POST'});
+  expect(anonTick.status).toBe(401);
+  const before=await env.DB.prepare('SELECT last_tick_at FROM market_state WHERE id=1').first();
+  const r=await SELF.fetch(base+'/api/market/fast-forward',{method:'POST',headers:{'content-type':'application/json',Cookie:await cookie(1)},body:'{"ticks":2}'});
+  expect(r.status).toBe(200);
+  const after=await env.DB.prepare('SELECT last_tick_at FROM market_state WHERE id=1').first();
+  expect(after.last_tick_at).toBeLessThanOrEqual(Date.now());
+  expect(after.last_tick_at).toBeGreaterThanOrEqual(before.last_tick_at);
  });
 });
 
