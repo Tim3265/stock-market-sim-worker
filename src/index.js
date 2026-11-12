@@ -40,6 +40,7 @@ async function route(request, env) {
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
   }
   if (path === '/api/auth/guest' && request.method === 'POST') {
+    if(!await auth.allowAttempt(env.DB,request))return Response.json({ok:false,message:'操作太頻繁，請五分鐘後再試'},{status:429});
     const input = await request.json().catch(() => ({}));
     const result = await auth.guestLogin(env.DB, input.nickname);
     const secure = url.protocol === 'https:' ? '; Secure' : '';
@@ -223,8 +224,20 @@ async function route(request, env) {
   }
 
   if (path === '/api/orderbook' && request.method === 'GET') {
-    const result=await book(env.DB,url.searchParams.get('symbol')??'');
+    const depthRaw=Number(url.searchParams.get('depth')??10);
+    const depth=Number.isInteger(depthRaw)?Math.min(Math.max(depthRaw,1),20):10;
+    const result=await book(env.DB,url.searchParams.get('symbol')??'',depth);
     return result.ok ? ok(result) : fail(result.code,result.message);
+  }
+  if (path === '/api/market/fast-forward' && request.method === 'POST') {
+    let input;try{input=await request.json();}catch{return fail('INVALID_INPUT','請求內容必須是 JSON');}
+    const ticks=Math.min(Math.max(Math.trunc(Number(input.ticks??1)),1),60);
+    for(let i=0;i<ticks;i++){
+      await maybeTick(env.DB,Date.now()+i*15000);
+      await matchCrossed(env.DB);
+      await runBotActivity(env.DB);
+    }
+    return ok({message:`已快轉 ${ticks} 輪`,ticks});
   }
   if (path === '/api/orders' && request.method === 'GET') {
     const result=await listOrders(env.DB,current.account_id);

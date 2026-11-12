@@ -208,7 +208,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
    expect(await env.DB.prepare('SELECT COUNT(*) n FROM order_fills').first()).toMatchObject({n:0});
   } finally {await env.DB.exec('DROP TRIGGER fail_test');}
  });
- it('同時讀取行情只推進一輪，10 秒內不重複推進',async()=>{
+ it('同時讀取行情只推進一輪，15 秒內不重複推進',async()=>{
   const results=await Promise.all(Array.from({length:8},()=>get('/api/stocks')));
   expect(results.every(r=>r.status===200)).toBe(true);
   expect(await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first()).toMatchObject({tick_count:1});
@@ -274,3 +274,11 @@ describe("黑天鵝與市場快訊 API", () => {
     expect(res.events.length).toBeGreaterThan(0);
   });
 });
+ it('trades 雙寫與 order_fills 一致（每筆成交兩列 trades + 一列 fills）',async()=>{
+  await get('/api/orderbook?symbol=2330');
+  await env.DB.prepare('UPDATE accounts SET cash=20000000 WHERE id=1').run();
+  await order({account_id:1,symbol:'2330',side:'BUY',type:'MARKET',shares:10,request_id:'consistency-000001'});
+  const fills=(await env.DB.prepare('SELECT COUNT(*) n FROM order_fills').first()).n;
+  const trades=(await env.DB.prepare('SELECT COUNT(*) n FROM trades').first()).n;
+  expect(trades).toBe(fills*2);
+ });

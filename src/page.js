@@ -253,6 +253,8 @@ $('#btn-play').onclick=login;
 
 async function poll(){
   state=await api('/api/live?symbol='+selected);
+  const idx=await api('/api/index');
+  if(idx.ok){state.index=idx.index;state.indexHistory=idx.history;}
   render();
 }
 
@@ -279,7 +281,7 @@ function render(){
   $('#cash-val').textContent=fmt(state.account?state.account.cash:0);
   if(state.index!=null){
     $('#index-val').textContent=fmt(state.index);
-    const h=state.histories&&state.histories.IDX;
+    const h=state.indexHistory;
     const chgEl=$('#index-chg');
     if(h&&h.length>1){
       const c=pct(state.index,h[0].price);

@@ -8,12 +8,12 @@ export const BROKER = { name: '大樹證券', feeRate: 0.000399, listFeeRate: 0.
 const feeCents=(priceCents,shares)=>Math.ceil(priceCents*shares*399/1000000);
 const err=(code,message)=>({ok:false,code,message});
 const prepare=(db,sql,...values)=>db.prepare(sql).bind(...values);
-export async function book(db,symbol){
+export async function book(db,symbol,depth=10){
  await maybeTick(db);
  const stock=await prepare(db,'SELECT symbol,price,ref_price FROM stocks WHERE symbol=?',symbol).first();
  if(!stock)return err('NOT_FOUND','沒有這檔股票');
  const rows=(await prepare(db,"SELECT side,price,SUM(shares-filled_shares) quantity FROM orders WHERE symbol=? AND status IN ('OPEN','PARTIAL') GROUP BY side,price",symbol).all()).results;
- return {ok:true,stock,bids:rows.filter(x=>x.side==='BUY').sort((a,b)=>b.price-a.price).slice(0,10),asks:rows.filter(x=>x.side==='SELL').sort((a,b)=>a.price-b.price).slice(0,10)};
+ return {ok:true,stock,bids:rows.filter(x=>x.side==='BUY').sort((a,b)=>b.price-a.price).slice(0,depth),asks:rows.filter(x=>x.side==='SELL').sort((a,b)=>a.price-b.price).slice(0,depth)};
 }
 export async function listOrders(db,accountId){
  if(!Number.isSafeInteger(accountId)||accountId<1)return err('INVALID_INPUT','帳戶錯誤');
