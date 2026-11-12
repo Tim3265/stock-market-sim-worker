@@ -25,19 +25,19 @@ export const PAGE_HTML = `<!DOCTYPE html>
     background-size:32px 32px;
     color:var(--txt);
     font-family:'Press Start 2P', monospace;
-    font-size:12px; line-height:1.7;
+    font-size:13px; line-height:1.7;
     image-rendering:pixelated;
   }
   .hidden{display:none !important;}
-  button,input{font-family:inherit; font-size:12px;}
+  button,input{font-family:inherit; font-size:13px;}
   button{
     background:var(--gold); color:#1a1a2e; border:0; padding:10px 14px; cursor:pointer;
     box-shadow:0 var(--px) 0 #b8860b; font-weight:bold;
   }
   button:active{transform:translateY(var(--px)); box-shadow:none;}
   button.ghost{background:var(--panel2); color:var(--txt); box-shadow:0 var(--px) 0 var(--line);}
-  button.buy{background:var(--green); box-shadow:0 var(--px) 0 #1d7a44;}
-  button.sell{background:var(--red); color:#fff; box-shadow:0 var(--px) 0 #8f2438;}
+  button.buy{background:var(--red); color:#fff; box-shadow:0 var(--px) 0 #8f2438;}
+  button.sell{background:var(--green); color:#08131f; box-shadow:0 var(--px) 0 #1d7a44;}
   input{
     background:#0a0c16; color:var(--txt); border:2px solid var(--line); padding:10px; width:100%;
   }
@@ -71,7 +71,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
   }
   header .logo{color:var(--gold); font-size:14px; text-shadow:2px 2px 0 #b8860b;}
   #index-chip{display:flex; align-items:center; gap:10px; padding:6px 12px; background:var(--panel2); border:2px solid var(--line);}
-  #index-chip .up{color:var(--green);} #index-chip .down{color:var(--red);}
+  #index-chip .up{color:var(--red);} #index-chip .down{color:var(--green);}
   header .spacer{flex:1;}
   #cash-chip{color:var(--green);}
   main{max-width:1200px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:16px;}
@@ -86,8 +86,8 @@ export const PAGE_HTML = `<!DOCTYPE html>
   .stock-card:hover{transform:translate(-2px,-2px); border-color:var(--gold);}
   .stock-card .sym{color:var(--blue); font-size:10px;}
   .stock-card .name{font-size:13px; margin:4px 0;}
-  .stock-card .price{font-size:16px;}
-  .stock-card .chg.up{color:var(--green);} .stock-card .chg.down{color:var(--red);}
+  .stock-card .price{font-size:18px;}
+  .stock-card .chg.up{color:var(--red);} .stock-card .chg.down{color:var(--green);}
   .stock-card svg{width:100%; height:48px; display:block; margin-top:8px;}
 
   /* 個股面板 */
@@ -101,21 +101,21 @@ export const PAGE_HTML = `<!DOCTYPE html>
     button{touch-action:manipulation;} /* 手機點擊不延遲 */
   }
   .book-col h3{font-size:11px; margin-bottom:8px; color:var(--dim);}
-  .book-row{display:flex; justify-content:space-between; padding:3px 6px; font-size:10px;}
+  .book-row{display:flex; justify-content:space-between; padding:3px 6px; font-size:11px;}
   .book-row .bid{color:var(--green);} .book-row .ask{color:var(--red);}
   .book-row .bar{height:6px; margin-top:2px;}
   .bar.bid{background:rgba(61,220,120,.35);} .bar.ask{background:rgba(255,84,112,.35);}
 
   #order-form{display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:10px;}
   #order-form input{width:110px;}
-  #order-msg{font-size:10px; min-height:18px;}
+  #order-msg{font-size:11px; min-height:18px;}
   #order-msg.ok{color:var(--green);} #order-msg.err{color:var(--red);}
 
-  table{width:100%; border-collapse:collapse; font-size:10px;}
+  table{width:100%; border-collapse:collapse; font-size:11px;}
   th,td{padding:6px 8px; text-align:right; border-bottom:1px solid var(--line);}
   th:first-child,td:first-child{text-align:left;}
   th{color:var(--dim);}
-  .up{color:var(--green);} .down{color:var(--red);}
+  .up{color:var(--red);} .down{color:var(--green);}
   .section-title{font-size:13px; color:var(--gold); margin-bottom:10px;}
   .row-actions button{padding:4px 8px; font-size:10px;}
   #broker-note{color:var(--dim); font-size:10px;}
@@ -159,7 +159,8 @@ export const PAGE_HTML = `<!DOCTYPE html>
       <div id="order-form" class="panel">
         <span id="ord-sym" style="color:var(--blue); font-size:10px;"></span>
         <input id="ord-shares" type="number" min="1" placeholder="股數" inputmode="numeric">
-        <input id="ord-price" type="number" step="0.01" placeholder="限價（市價留空）" inputmode="decimal">
+        <input id="ord-price" type="number" step="0.01" placeholder="限價（留空=市價）" inputmode="decimal">
+        <span id="ord-est" style="color:var(--gold); font-size:11px;"></span>
         <button class="buy" id="btn-buy">買進</button>
         <button class="sell" id="btn-sell">賣出</button>
         <span id="order-msg"></span>
@@ -261,6 +262,8 @@ function start(){
   $('#btn-recharge').onclick=async()=>{await api('/api/account/recharge',{method:'POST'});poll();};
   $('#btn-buy').onclick=()=>place('BUY');
   $('#btn-sell').onclick=()=>place('SELL');
+  $('#ord-shares').addEventListener('input',updateEst);
+  $('#ord-price').addEventListener('input',updateEst);
   document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;
     document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.toggle('active',x===b));
     ['market','portfolio','orders','fills','leaderboard','bots'].forEach(t=>$('#tab-'+t).classList.toggle('hidden',t!==tab));
@@ -295,7 +298,7 @@ function renderMarket(){
     const hist=state.histories[s.symbol]||[];
     const chg=pct(s.price,s.ref_price);
     const cls=chg>=0?'up':'down';
-    const color=chg>=0?'var(--green)':'var(--red)';
+    const color=chg>=0?'var(--red)':'var(--green)';
     return '<div class="stock-card panel" data-sym="'+s.symbol+'">'
       +'<div class="sym">'+s.symbol+'</div>'
       +'<div class="name">'+s.name+(s.nickname?' · '+s.nickname:'')+'</div>'
@@ -315,18 +318,38 @@ function renderDetail(){
   d.classList.remove('hidden');
   const hist=state.histories[selected]||[];
   const chg=pct(s.price,s.ref_price);
-  const color=chg>=0?'var(--green)':'var(--red)';
+  const color=chg>=0?'var(--red)':'var(--green)';
   // 只更新標題、走勢圖與盤口；下單表單維持不動，避免輪詢時搶走輸入框焦點
   $('#detail-title').innerHTML=s.name+' '+s.symbol+' $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
   $('#ord-sym').textContent='下單：'+s.symbol+' '+s.name;
+  // 走勢圖加上價格單位：最高/最低標籤 + 現價虛線標籤
   $('#detail-chart').innerHTML=hist.length>1?(()=>{const vals=hist.map(p=>Number(p.price));const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
-    const pts=vals.map((v,i)=>(i*(600/(vals.length-1))).toFixed(1)+','+(170-((v-min)/span)*160).toFixed(1)).join(' ');
-    return '<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="3"/>';})():'<polyline points="" fill="none"/>';
+    const pts=vals.map((v,i)=>(i*(540/(vals.length-1))).toFixed(1)+','+(170-((v-min)/span)*160).toFixed(1)).join(' ');
+    const cy=(170-((s.price-min)/span)*160).toFixed(1);
+    return '<text x="4" y="16" fill="#8a90b8" font-size="12">$'+fmt(max)+'</text>'
+      +'<text x="4" y="176" fill="#8a90b8" font-size="12">$'+fmt(min)+'</text>'
+      +'<line x1="0" y1="'+cy+'" x2="600" y2="'+cy+'" stroke="'+color+'" stroke-width="1" stroke-dasharray="6 4" opacity="0.7"/>'
+      +'<text x="596" y="'+(Number(cy)-5).toFixed(1)+'" fill="'+color+'" font-size="13" text-anchor="end">$'+fmt(s.price)+'</text>'
+      +'<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="3"/>';})()
+    :'<text x="300" y="95" fill="#8a90b8" font-size="12" text-anchor="middle">尚無成交資料</text>';
+  updateEst();
   const maxQ=Math.max(1,...[...state.bids,...state.asks].map(b=>b.quantity));
   const row=(b,side)=>'<div class="book-row"><span class="'+side+'">$'+fmt(b.price)+'</span><span>'+b.quantity+'</span></div>'
     +'<div class="bar '+side+'" style="width:'+Math.round(b.quantity/maxQ*100)+'%"></div>';
   $('#asks-rows').innerHTML=state.asks.slice().reverse().map(b=>row(b,'ask')).join('');
   $('#bids-rows').innerHTML=state.bids.map(b=>row(b,'bid')).join('');
+}
+
+// 即時預估成交金額與手續費（大樹證券 0.1425% 打 2.8 折 = 0.0399%，向上取到 0.01）
+function updateEst(){
+  const el=$('#ord-est');
+  const s=state&&state.stocks.find(x=>x.symbol===selected);
+  const shares=Math.floor(Number($('#ord-shares').value));
+  if(!s||!Number.isInteger(shares)||shares<1){el.textContent='';return;}
+  const price=$('#ord-price').value?Number($('#ord-price').value):s.price;
+  const amt=shares*price;
+  const fee=Math.max(0.01,Math.ceil(amt*0.000399*100)/100);
+  el.textContent='預計 $'+fmt(amt)+'（手續費 $'+fee.toFixed(2)+'）';
 }
 
 async function place(side){
