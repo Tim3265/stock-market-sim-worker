@@ -7,9 +7,9 @@ async function derive(password,salt){
  const key=await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveBits']);
  return hex(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:bytes(salt),iterations:100000},key,256));
 }
-export async function allowAttempt(db,request){
+export async function allowAttempt(db,request,scope='auth'){
  const address=request.headers.get('CF-Connecting-IP')||'local';
- const key=await digest(address),now=Date.now(),windowStart=now-300000;
+ const key=await digest(address+':'+scope),now=Date.now(),windowStart=now-300000;
  const row=await db.prepare(`INSERT INTO auth_rate_limits(key_hash,window_start,attempts) VALUES(?,?,1)
  ON CONFLICT(key_hash) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END,window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END RETURNING attempts`).bind(key,now,windowStart,windowStart).first();
  return row.attempts<=15;

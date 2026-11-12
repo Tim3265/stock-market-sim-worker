@@ -317,10 +317,17 @@ market_state（單列，全域時鐘與鎖）
 | `accounts` | `id` | 名稱、本金、現金、`frozen_cash`、`is_bot`、`bot_kind` |
 | `holdings` | `(account_id, symbol)` | 股數、`frozen_shares` |
 | `orders` | `id` | 委託：方向、型態、價格、股數、已成交、狀態 |
-| `trades` | `id` | 成交：買方、賣方、價格、股數、金額、吃單方 |
+| `trades` | `id` | 每筆成交雙寫的 per-account 交易列（買方一列＋賣方一列，見下） |
 | `price_history` | `id` | 每次成交或 tick 的價格（`symbol, ts` 索引） |
 | `market_state` | `id` | 單列：`last_tick_at`、`tick_count`、`match_seq` |
 | `bot_state` | `(account_id, symbol)` | 機器人狀態（如恐慌剩餘 tick） |
+| `order_fills` | `id` | 撮合成交唯一帳本：買方、賣方、價格、股數、金額 |
+| `fee_revenue` | `id` | 手續費收入累計 |
+| `index_history` | `id` | 每 tick 六檔加權指數歷史 |
+| `transaction_guard` | — | 交易內 `changes()` 哨兵，驗證 CAS 有效 |
+| `player_credentials` | `account_id` | 登入帳號（PBKDF2 密碼） |
+| `player_sessions` | `token_hash` | 工作階段（7 天） |
+| `auth_rate_limits` | `key_hash` | 每 IP 限流計數 |
 
 **`orders` 狀態機**
 
@@ -383,11 +390,13 @@ BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 | `idx_orders_book(symbol, side, status, price, id)` | 撮合：取最佳價、同價 FIFO |
 | `idx_orders_account(account_id, status, id DESC)` | 我的委託 |
 | `idx_trades_account(account_id, id DESC)` | 我的成交（篩選＋分頁） |
-| `idx_trades_symbol(symbol, id DESC)` | 個股成交明細 |
+| `idx_trades_symbol(symbol)` | 個股成交明細 |
 | `idx_price_history_symbol(symbol, id DESC)` | 走勢圖 |
 | `idx_price_history_symbol_time(symbol, created_at)` | 走勢圖時間範圍查詢 |
 | `idx_orders_active(symbol, side, price, id)` WHERE status IN ('OPEN','PARTIAL') AND type='LIMIT' | 部分索引：只索引活躍限價委託 |
-| `idx_holdings_account(account_id)` | 資產結算 |
+| `idx_fills_buyer(buyer_id, id DESC)` / `idx_fills_seller(seller_id, id DESC)` / `idx_fills_symbol(symbol, id DESC)` | 成交帳本查詢（實驗用） |
+| `idx_player_sessions_expiry(expires_at)` | 工作階段過期清理 |
+（`holdings` 以 `(account_id, symbol)` 為複合主鍵，帳戶查詢直接走 PK，不另建索引）
 
 **報告實驗**：以 10 萬筆成交比較
 `WHERE buyer_id = ? OR seller_id = ?` 在有／無索引下的查詢計畫與時間。
@@ -501,7 +510,7 @@ UPDATE market_state
 | GET | `/api/history?symbol=2330&hours=6` | 走勢（最後成交價） |
 | POST | `/api/orders` | 下單（市價或限價） |
 | DELETE | `/api/orders/:id` | 取消委託 |
-| POST | `/api/trade` | 已停用，固定回 400，請改用 `/api/orders` |
+| POST | `/api/trade` | 已停用：未登入回 401，登入後固定回 400，請改用 `/api/orders` |
 | POST | `/api/tick` | 手動推進一輪（需登入，開發／demo 用） |
 | POST | `/api/market/fast-forward` | body `{"ticks":1..60}` 快轉產生歷史（需登入；設 DEV_SECRET 時需 Bearer 金鑰） |
 | POST | `/api/auth/register` / `/api/auth/login` | 註冊／登入（每 IP 5 分鐘 15 次） |
@@ -547,6 +556,8 @@ UPDATE market_state
 | `ORDER_NOT_FOUND` | 404 | 委託不存在 |
 | `NOT_YOUR_ORDER` | 403 | 不能取消別人的委託 |
 | `NOT_FOUND` | 404 | 帳戶／股票不存在 |
+| `UNAUTHENTICATED` | 401 | 未登入或工作階段無效 |
+| `RATE_LIMITED` | 429 | 每 IP 五分鐘 15 次（登入類另計；開發端點獨立桶） |
 | `CONFLICT` | 409 | 撮合鎖競爭，請重試 |
 | `INVALID_STATE` | 400 | 資料違反資料庫約束（CHECK 觸發） |
 
@@ -568,15 +579,14 @@ src/
 ├─ page.js                前端（HTML + 原生 JS）
 ├─ http.js                統一 JSON 回應與錯誤碼 → 狀態碼
 ├─ domain/
-│  ├─ trading.js          placeOrder()      下單、凍結、交割
-│  ├─ orderbook.js        match()           撮合（價格／時間優先）
-│  ├─ market.js           tick()、報價中心、漲跌停
+│  ├─ orders.js           placeMarketOrder()、cancelOrder()、matchCrossed()  下單、凍結、交割
+│  ├─ orderbook.js        matchOrders()     撮合（價格／時間優先）
+│  ├─ marketMaker.js      maybeTick()       tick、造市商報價、漲跌停
+│  ├─ botActivity.js      runBotActivity()  動能／價值／恐慌機器人
 │  ├─ portfolio.js        snapshot()        資產結算
-│  └─ bots/
-│     ├─ marketMaker.js
-│     ├─ momentum.js
-│     ├─ value.js
-│     └─ panic.js
+│  ├─ auth.js             register/login/session/allowAttempt
+│  ├─ events.js           getActiveEvents() 市場事件
+│  └─ market.js           行情查詢
 ├─ db/
 │  ├─ queries.js          所有 SQL 與 batch 建構
 │  └─ seed.js             種子資料
