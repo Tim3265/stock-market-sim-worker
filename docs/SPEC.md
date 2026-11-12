@@ -40,7 +40,7 @@
 - 真實下單、真實金流、實名認證
 - 高頻交易、毫秒級撮合、跨市場套利
 - 行動版 App、WebSocket 即時推播
-- 本學期不做登入（改用切換帳戶）
+- ~~本學期不做登入~~（Sprint 3 更新：已實作帳號密碼登入 + 訪客快速登入）
 
 ---
 
@@ -121,6 +121,8 @@ Sprint 2 造市商以一個 D1 batch 建立限價報價並凍結資源；玩家�
 第 1 檔：偏離 mid ±0.1%，掛 liquidity × 0.2 股
 第 2 檔：偏離 mid ±0.3%，掛 liquidity × 0.5 股
 第 3 檔：偏離 mid ±0.8%，掛 liquidity × 1.0 股
+第 4 檔：偏離 mid ±1.5%，掛 liquidity × 1.5 股
+第 5 檔：偏離 mid ±2.5%，掛 liquidity × 2.0 股
 ```
 
 - `liquidity` 大 → 每檔掛很多 → 買 10 張幾乎不動
@@ -178,7 +180,7 @@ change    = drift + noise
 
 | 機器人 | 觸發 | 行為 |
 |---|---|---|
-| 造市商 | 每 tick | 取消自己所有掛單 → 以中價為中心重掛 3 層買賣單 |
+| 造市商 | 每 tick | 取消自己所有掛單 → 以中價為中心重掛 5 層買賣單 |
 | 動能派 | 每 3 tick | 近 5 筆成交價連漲 > 2% → 市價買；連跌 > 2% → 市價賣 |
 | 價值派 | 每 5 tick | `price < fair × 0.97` → 限價買；`price > fair × 1.03` → 限價賣 |
 | 恐慌賣壓 | 每 tick 0.5% 機率 | 進入恐慌 5 個 tick，每 tick 市價賣出持股的 20% |
@@ -197,9 +199,9 @@ change    = drift + noise
 | 2454 | 聯發科 | **發哥** | IC 設計 | 1,290 | 12,000 | 波動大，適合做波段 |
 | 3711 | 日月光投控 | **日月潭** | 封測 | 165 | 4,000 | 中小型，一般玩家推得動 |
 | YZU | 元智智能（虛構） | **元智 AI** | AI 伺服器 | 45 | 300 | **超低流動性，常常掛不到** |
-| 待定 | 虛構公司「右鍵」 | **右鍵** | 待定 | 待定 | 待定 | 第六檔，名稱與產業參數稍後設計 |
+| YOUJIAN | 虛構公司「右鍵」 | **右鍵** | 虛構網路社群 | 30 | 200 | 超低流動性，常常掛不到 |
 
-> 六檔：使用者確認「右鍵」為虛構的第六檔，股票代號及參數尚待設計。
+> 六檔：第六檔為虛構公司「右鍵」（代號 YOUJIAN），股價 30、流動性 200。
 
 **設計意圖**
 
@@ -253,7 +255,7 @@ change    = drift + noise
 
 | ID | 故事 | 驗收條件 |
 |---|---|---|
-| US-08 | 系統有一本委託簿 | 可看到每檔股票的最佳 5 檔買賣價與數量 |
+| US-08 | 系統有一本委託簿 | 可看到每檔股票的最佳 10 檔買賣價與數量（`depth=1..20` 可調） |
 | US-09 | 我的市價單會吃掉簿上的掛單 | 成交價可能是好幾檔的混合 |
 | US-10 | 我的市價單可能吃不飽 | 剩餘股數直接取消，並回報成交量 |
 | US-11 | 造市商會自動掛單 | 每 15 秒重新報價；深度依 `liquidity` 不同 |
@@ -330,18 +332,14 @@ market_state（單列，全域時鐘與鎖）
     └───────────┴──► CANCELLED ◄───────────┘
 ```
 
-**`trades` 為什麼一筆成交只寫一列？**
+**`trades` 為什麼一筆成交寫兩列？**
 
-一筆成交同時有買方與賣方。寫一列（`buyer_id`、`seller_id`）比寫兩列更正規化，
-也避免「同一筆成交被重複計算」。查某人的成交時：
+實作採每筆成交雙寫（買方一列 + 賣方一列，見 §8.5），保留 per-account 交易歷史 API；
+唯一的撮合成交帳本是 `order_fills`（含 buyer_id / seller_id），一致性由測試保證
+（trades 筆數 = 2 × order_fills 筆數）。查某人的成交時直接用：
 
 ```sql
-SELECT ...,
-       CASE WHEN buyer_id = ? THEN 'BUY' ELSE 'SELL' END AS side
-  FROM trades
- WHERE buyer_id = ? OR seller_id = ?
- ORDER BY id DESC
- LIMIT ? OFFSET ?
+SELECT ... FROM trades WHERE account_id = ? ORDER BY id DESC LIMIT ? OFFSET ?
 ```
 
 ### 8.3 完整性規則（CHECK / FK / Trigger）
@@ -361,7 +359,7 @@ SELECT ...,
 -- 限價買單寫入時，確認「可用現金」足以支付剩餘價款＋整體手續費（0.0399%，一次向上取整）
 CREATE TRIGGER trg_order_buy_guard BEFORE INSERT ON orders
 WHEN NEW.side='BUY' AND NEW.type='LIMIT' AND NEW.status IN ('OPEN','PARTIAL')
- AND (SELECT (cash - frozen_cash)*100 FROM accounts WHERE id=NEW.account_id)
+ AND (SELECT CAST(ROUND((cash - frozen_cash)*100) AS INTEGER) FROM accounts WHERE id=NEW.account_id)
      < (CAST(ROUND(NEW.price*100) AS INTEGER) * (NEW.shares - NEW.filled_shares)
         + CAST(CEIL(NEW.price*100*(NEW.shares - NEW.filled_shares)*399/1000000) AS INTEGER))
 BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
@@ -371,7 +369,7 @@ BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 -- 因此此處檢查總現金而非可用現金（見 migrations/0008）。
 CREATE TRIGGER trg_trade_buy_guard BEFORE INSERT ON trades
 WHEN NEW.side = 'BUY'
- AND (SELECT cash*100 FROM accounts WHERE id = NEW.account_id) < CAST(ROUND((NEW.amount + NEW.fee_amount)*100) AS INTEGER)
+ AND (SELECT CAST(ROUND(cash*100) AS INTEGER) FROM accounts WHERE id = NEW.account_id) < CAST(ROUND((NEW.amount + NEW.fee_amount)*100) AS INTEGER)
 BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 ```
 
@@ -384,10 +382,11 @@ BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 |---|---|
 | `idx_orders_book(symbol, side, status, price, id)` | 撮合：取最佳價、同價 FIFO |
 | `idx_orders_account(account_id, status, id DESC)` | 我的委託 |
-| `idx_trades_buyer(buyer_id, id DESC)` | 我的成交（買方） |
-| `idx_trades_seller(seller_id, id DESC)` | 我的成交（賣方） |
+| `idx_trades_account(account_id, id DESC)` | 我的成交（篩選＋分頁） |
 | `idx_trades_symbol(symbol, id DESC)` | 個股成交明細 |
-| `idx_history(symbol, ts DESC)` | 走勢圖 |
+| `idx_price_history_symbol(symbol, id DESC)` | 走勢圖 |
+| `idx_price_history_symbol_time(symbol, created_at)` | 走勢圖時間範圍查詢 |
+| `idx_orders_active(symbol, side, price, id)` WHERE status IN ('OPEN','PARTIAL') AND type='LIMIT' | 部分索引：只索引活躍限價委託 |
 | `idx_holdings_account(account_id)` | 資產結算 |
 
 **報告實驗**：以 10 萬筆成交比較
@@ -495,7 +494,7 @@ UPDATE market_state
 | 方法 | 路徑 | 說明 |
 |---|---|---|
 | GET | `/api/stocks` | 行情（含最後成交價、漲跌） |
-| GET | `/api/orderbook?symbol=2330&depth=5` | 委託簿（聚合後的最佳 5 檔） |
+| GET | `/api/orderbook?symbol=2330&depth=10` | 委託簿（聚合後的最佳 10 檔，depth 可調 1–20） |
 | GET | `/api/account?id=1` | 帳戶、持股、資產 |
 | GET | `/api/trades?id=1&symbol=&side=&from=&to=&limit=20&offset=0` | 我的成交（篩選＋分頁） |
 | GET | `/api/orders?id=1&status=OPEN` | 我的委託 |
@@ -505,6 +504,19 @@ UPDATE market_state
 | POST | `/api/trade` | 已停用，固定回 400，請改用 `/api/orders` |
 | POST | `/api/tick` | 手動推進一輪（需登入，開發／demo 用） |
 | POST | `/api/market/fast-forward` | body `{"ticks":1..60}` 快轉產生歷史（需登入；設 DEV_SECRET 時需 Bearer 金鑰） |
+| POST | `/api/auth/register` / `/api/auth/login` | 註冊／登入（每 IP 5 分鐘 15 次） |
+| POST | `/api/auth/guest` | 訪客快速登入（agar.io 式暱稱） |
+| POST | `/api/auth/logout` / GET `/api/auth/session` | 登出／查詢目前 session |
+| GET | `/api/live?symbol=2330` | 一次回行情、帳戶、持股、委託、成交、盤口、事件、指數、走勢 |
+| GET | `/api/index` | 六檔加權指數與歷史 |
+| GET | `/api/events` / `/api/market-activity` | 市場事件 / 最新成交 |
+| GET | `/api/bots` / `/api/volume?symbol=` | 機器人帳戶 / 分鐘成交量 |
+| GET | `/api/histories` / `/api/history?symbol=` | 六檔走勢 / 單檔走勢 |
+| GET | `/api/leaderboard` | 排行榜（含機器人，標 is_bot） |
+| GET | `/api/trades/export` | 成交 CSV 匯出（需登入） |
+| POST | `/api/account/recharge` | 重置為初始資金（需登入） |
+
+> 需登入的 API：`/api/orders`、`/api/trades`、`/api/trades/export`、`/api/account`、`/api/account/recharge`、`/api/tick`、`/api/market/fast-forward`（未帶 session 回 401）。其餘 GET 行情類 API 公開。
 
 `POST /api/orders`
 
@@ -643,7 +655,7 @@ snapshot(db, accountId)
 | Q1 | 台股還是美股 | **台股** |
 | Q2 | 資料來源 | **TWSE OpenAPI**（僅校準參數） |
 | Q3 | 價格形成 | **委託簿撮合 + 機器人** |
-| Q4 | 登入 | **本學期不做**，改用切換帳戶 |
+| Q4 | 登入 | 帳號密碼登入（PBKDF2 儲存）＋訪客快速登入 |
 | Q5 | 手續費 | 有，0.0399%（大樹證券 2.8 折，Sprint 4） |
 | Q6 | 走勢圖 | 近 6 小時 |
 | Q7 | tick 間隔 | **15 秒，有人使用才推進** |

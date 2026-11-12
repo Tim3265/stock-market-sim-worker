@@ -293,6 +293,44 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect(after.last_tick_at).toBeLessThanOrEqual(Date.now());
   expect(after.last_tick_at).toBeGreaterThanOrEqual(before.last_tick_at);
  });
+ it('回歸：6+4 分批部分成交後凍結資金恰好歸零（預扣差額釋放）',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(8,'辛',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(9,'壬',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares) VALUES(9,'YZU',10)").run();
+  const buy=await order({account_id:8,symbol:'YZU',side:'BUY',type:'LIMIT',price:44,shares:10,request_id:'split-fee-000001'});
+  expect(buy.body.status).toBe('OPEN');
+  await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
+  const s1=await order({account_id:9,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:6,request_id:'split-fee-000002'});
+  expect(s1.status).toBe(200);expect(s1.body).toMatchObject({status:'FILLED',filledShares:6});
+  const s2=await order({account_id:9,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:4,request_id:'split-fee-000003'});
+  expect(s2.status).toBe(200);expect(s2.body).toMatchObject({status:'FILLED',filledShares:4});
+  const st=await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=8').first();
+  expect(st.frozen_cash).toBe(0);
+  expect(st.cash).toBeCloseTo(100000-440-0.19,2);
+  expect((await env.DB.prepare("SELECT status FROM orders WHERE request_id='split-fee-000001'").first()).status).toBe('FILLED');
+ });
+ it('回歸：部分成交後取消剩餘，釋放金額不會超過凍結（不會觸發 CHECK 500）',async()=>{
+  await get('/api/orderbook?symbol=YZU');
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(10,'癸',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(11,'子',100000,100000)").run();
+  await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares) VALUES(11,'YZU',10)").run();
+  const buy=await order({account_id:10,symbol:'YZU',side:'BUY',type:'LIMIT',price:44,shares:10,request_id:'cancel-fee-00001'});
+  expect(buy.body.status).toBe('OPEN');
+  await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
+  const s1=await order({account_id:11,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:6,request_id:'cancel-fee-00002'});
+  expect(s1.status).toBe(200);
+  const del=await SELF.fetch(base+'/api/orders/'+buy.body.orderId+'?account_id=10',{method:'DELETE',headers:{Cookie:await cookie(10)}});
+  expect(del.status).toBe(200);
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=10').first()).toEqual({frozen_cash:0});
+ });
+ it('回歸：現金恰好等於價款加手續費時，資料庫觸發器不會因浮點誤判而擋下',async()=>{
+  // 1.14*100 在浮點下是 113.99999999999999；觸發器必須 ROUND 到分再比較。
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(13,'浮',1.14,1.14)").run();
+  await env.DB.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,filled_shares,status,request_id,fee_scheme) VALUES(13,'YZU','BUY','LIMIT',1.13,1,0,'OPEN','float-edge-00001',1)").run();
+  await env.DB.prepare("INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(13,'YZU','BUY',1,1.13,1.13,0.01)").run();
+  await env.DB.prepare("INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(13,'YZU','BUY',1,1.13,1.13,0.01)").run();
+ });
 });
 
 describe("黑天鵝與市場快訊 API", () => {

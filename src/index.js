@@ -5,7 +5,6 @@
 // 商業規則在 src/domain/*，SQL 在 src/db/queries.js，前端在 src/page.js。
 
 import * as queries from "./db/queries.js";
-import { executeTrade } from "./domain/trading.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
 import { PAGE_HTML } from "./page.js";
@@ -148,9 +147,14 @@ async function route(request, env) {
     // 開發／demo 用：需要登入，避免匿名請求推進市場、燒 D1 寫入額度。
     const current = await auth.session(env.DB, request);
     if (!current) return Response.json({ ok: false, code: 'UNAUTHENTICATED', message: '請先登入' }, { status: 401 });
+    if (env.DEV_SECRET && request.headers.get('Authorization') !== 'Bearer ' + env.DEV_SECRET)
+      return Response.json({ ok: false, code: 'FORBIDDEN', message: '需要開發金鑰' }, { status: 403 });
     if (!await auth.allowAttempt(env.DB, request)) return Response.json({ ok: false, message: '操作太頻繁，請五分鐘後再試' }, { status: 429 });
     if (upgraded) {
-      await maybeTick(env.DB);
+      // 手動 tick 強制推進一輪（用未來時間戳繞過 15 秒間隔），結束後把時鐘拉回現在。
+      const state = await env.DB.prepare('SELECT last_tick_at FROM market_state WHERE id=1').first();
+      await maybeTick(env.DB, Math.max(Date.now(), (state?.last_tick_at || 0) + 15000));
+      await env.DB.prepare('UPDATE market_state SET last_tick_at=? WHERE id=1').bind(Date.now()).run();
       await matchCrossed(env.DB);
       await runBotActivity(env.DB);
     }
