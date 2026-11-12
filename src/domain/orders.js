@@ -52,7 +52,7 @@ export async function matchCrossed(db){
     FROM orders b JOIN stocks st ON st.symbol=b.symbol JOIN orders s ON s.symbol=b.symbol AND s.side='SELL' AND s.type='LIMIT'
       AND s.status IN ('OPEN','PARTIAL') AND s.price<=b.price AND s.account_id<>b.account_id
     WHERE b.side='BUY' AND b.type='LIMIT' AND b.status IN ('OPEN','PARTIAL')
-      AND ROUND((CASE WHEN b.id<s.id THEN b.price ELSE s.price END)*100) BETWEEN ROUND(st.ref_price*100)*0.9 AND ROUND(st.ref_price*100)*1.1
+      AND ROUND((CASE WHEN b.id<s.id THEN b.price ELSE s.price END)*100) BETWEEN CAST(CEIL(ROUND(st.ref_price*100)*0.9) AS INTEGER) AND CAST(FLOOR(ROUND(st.ref_price*100)*1.1) AS INTEGER)
     ORDER BY b.symbol,b.price DESC,b.id ASC,s.price ASC,s.id ASC LIMIT 1`).first();
   if(!pair)return;
   const shares=Math.min(pair.bid_qty,pair.ask_qty),price=pair.bid_id<pair.ask_id?pair.bid:pair.ask;

@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(process.env.E2E_ORIGIN || 'http://127.0.0.1:8790');
-    await page.locator('#btn-guest-login').click();
+    await page.locator('#btn-play').click();
     await page.waitForSelector('[data-chart-symbol]');
     const taipeiTime = await page.evaluate(() => formatFillTime('2026-11-08 16:00:00'));
     assert.match(taipeiTime, /2026\/11\/09.*00:00:00/);

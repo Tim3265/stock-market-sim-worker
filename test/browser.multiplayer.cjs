@@ -7,8 +7,8 @@ const assert=require('node:assert/strict');
   const origin=process.env.E2E_ORIGIN||'http://127.0.0.1:8790';
   async function makePlayer(suffix){
    const context=await browser.newContext(),page=await context.newPage();
-   await page.goto(origin);await page.locator('#username').fill('user_'+Date.now()+'_'+suffix);
-   await page.locator('#password').fill('password-123');await page.locator('#register').click();
+   await page.goto(origin);await page.locator('#nickname').fill('user_'+Date.now()+'_'+suffix);
+   await page.locator('#btn-play').click();
    await page.waitForFunction(()=>document.querySelector('#auth-error').textContent.includes('註冊成功'));
    await page.getByRole('button',{name:'登入',exact:true}).click();await page.locator('#app-panel').waitFor();
    return {context,page};
