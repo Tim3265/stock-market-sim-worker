@@ -2,7 +2,10 @@ import { matchOrders } from './orderbook.js';
 import { maybeTick } from './marketMaker.js';
 const cents=x=>Math.round(Number(x)*100);
 const money=x=>x/100;
-const feeCents=(priceCents,shares)=>Math.ceil(priceCents*shares*1425/1000000);
+
+// 大樹證券：手續費 0.1425% 打 2.8 折 = 0.0399%，向上取到 0.01 元。
+export const BROKER = { name: '大樹證券', feeRate: 0.000399, listFeeRate: 0.001425, discount: '2.8折' };
+const feeCents=(priceCents,shares)=>Math.ceil(priceCents*shares*399/1000000);
 const err=(code,message)=>({ok:false,code,message});
 const prepare=(db,sql,...values)=>db.prepare(sql).bind(...values);
 export async function book(db,symbol){
@@ -10,7 +13,7 @@ export async function book(db,symbol){
  const stock=await prepare(db,'SELECT symbol,price,ref_price FROM stocks WHERE symbol=?',symbol).first();
  if(!stock)return err('NOT_FOUND','沒有這檔股票');
  const rows=(await prepare(db,"SELECT side,price,SUM(shares-filled_shares) quantity FROM orders WHERE symbol=? AND status IN ('OPEN','PARTIAL') GROUP BY side,price",symbol).all()).results;
- return {ok:true,stock,bids:rows.filter(x=>x.side==='BUY').sort((a,b)=>b.price-a.price).slice(0,5),asks:rows.filter(x=>x.side==='SELL').sort((a,b)=>a.price-b.price).slice(0,5)};
+ return {ok:true,stock,bids:rows.filter(x=>x.side==='BUY').sort((a,b)=>b.price-a.price).slice(0,10),asks:rows.filter(x=>x.side==='SELL').sort((a,b)=>a.price-b.price).slice(0,10)};
 }
 export async function listOrders(db,accountId){
  if(!Number.isSafeInteger(accountId)||accountId<1)return err('INVALID_INPUT','帳戶錯誤');
@@ -148,5 +151,7 @@ async function readResult(db,order){
  const fills=(await prepare(db,'SELECT maker_order_id orderId,price,shares,amount FROM order_fills WHERE taker_order_id=? ORDER BY id',order.id).all()).results;
  const total=fills.reduce((n,f)=>n+cents(f.price)*f.shares,0);
  const fee=order.fee_scheme?fills.reduce((n,f)=>n+feeCents(cents(f.price),f.shares),0):0;
- return {ok:true,orderId:order.id,status:order.status,filledShares:order.filled_shares,remaining:order.shares-order.filled_shares,avgPrice:order.filled_shares?money(Math.round(total/order.filled_shares)):null,amount:money(total),fee:money(fee),fills};
+ const remaining=order.shares-order.filled_shares;
+ const cancelReason=order.status==='CANCELLED'&&remaining>0?'IOC_NO_LIQUIDITY':null;
+ return {ok:true,orderId:order.id,status:order.status,filledShares:order.filled_shares,remaining,avgPrice:order.filled_shares?money(Math.round(total/order.filled_shares)):null,amount:money(total),fee:money(fee),cancelReason,fills};
 }

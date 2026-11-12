@@ -20,7 +20,8 @@ export async function register(db,username,password){
  const salt=randomHex(16),hash=await derive(password,salt);
  try{
   const id=10000000+crypto.getRandomValues(new Uint32Array(1))[0];
-  await db.batch([db.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,100000,100000)').bind(id,username),db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash) VALUES(?,?,?,?)').bind(id,username,salt,hash)]);
+  const initialCash = await marketInitialCash(db);
+  await db.batch([db.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,?,?)').bind(id,username,initialCash,initialCash),db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash) VALUES(?,?,?,?)').bind(id,username,salt,hash)]);
   return {accountId:id,username};
  }catch(e){if(String(e).includes('UNIQUE'))return {error:'帳號名稱已存在，請換一個'};throw e;}
 }
@@ -42,6 +43,13 @@ export async function logout(db,request){
  if(token)await db.prepare('DELETE FROM player_sessions WHERE token_hash=?').bind(await digest(token)).run();
 }
 
+// 初始資金依市場總量計算：六檔股票 流動性×現價 的總市值的 1/1000，最低 10 萬。
+export async function marketInitialCash(db) {
+ const rows = (await db.prepare("SELECT price, liquidity FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN')").all()).results;
+ const total = rows.reduce((sum, s) => sum + Number(s.price) * (Number(s.liquidity) || 0), 0);
+ return Math.max(100000, Math.round(total / 1000));
+}
+
 export async function guestLogin(db, nickname) {
  const rand = Math.floor(1000 + Math.random() * 9000);
  const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 12) : '大戶_' + rand;
@@ -49,7 +57,7 @@ export async function guestLogin(db, nickname) {
  const username = baseName.slice(0, 12) + '_' + randomHex(8);
  const salt = randomHex(16), hash = await derive('guest-token-' + rand, salt);
  const id = 10000000 + crypto.getRandomValues(new Uint32Array(1))[0];
- const initialCash = 10000000;
+ const initialCash = await marketInitialCash(db);
  await db.batch([
   db.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,?,?)').bind(id, username, initialCash, initialCash),
   db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash) VALUES(?,?,?,?)').bind(id, username, salt, hash)

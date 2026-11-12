@@ -13,16 +13,16 @@ async function get(path){const id=Number(new URL(base+path).searchParams.get('id
 async function order(data){const r=await SELF.fetch(base+'/api/orders',{method:'POST',headers:{'content-type':'application/json',Cookie:await cookie(data.account_id||1)},body:JSON.stringify(data)});return {status:r.status,body:await r.json()};}
 beforeEach(async()=>{for(const migration of env.ORDERBOOK_MIGRATIONS)await env.DB.batch(migration.queries.map(sql=>env.DB.prepare(sql)));});
 describe('Sprint 2: 市價單及造市商',()=>{
- it('每筆成交手續費按 0.1425% 向上取到分，費用進入費用帳',async()=>{
+ it('每筆成交手續費按大樹證券 2.8 折（0.0399%）向上取到分，費用進入費用帳',async()=>{
   await get('/api/stocks');
   await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE symbol='YZU' AND side='SELL'").run();
   await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(12,'seller',100,100)").run();
   await env.DB.prepare("INSERT INTO holdings(account_id,symbol,shares,frozen_shares) VALUES(12,'YZU',100,100)").run();
   await env.DB.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status) VALUES(12,'YZU','SELL','LIMIT',45,100,'OPEN')").run();
   const result=await order({account_id:1,symbol:'YZU',side:'BUY',shares:100,request_id:'fee-test-00000001'});
-  expect(result.body).toMatchObject({amount:4500,fee:6.42});
-  expect(await env.DB.prepare('SELECT cash FROM accounts WHERE id=1').first()).toEqual({cash:95493.58});
-  expect(await env.DB.prepare('SELECT amount FROM fee_revenue WHERE id=1').first()).toEqual({amount:6.42});
+  expect(result.body).toMatchObject({amount:4500,fee:1.80});
+  expect(await env.DB.prepare('SELECT cash FROM accounts WHERE id=1').first()).toEqual({cash:95498.20});
+  expect(await env.DB.prepare('SELECT amount FROM fee_revenue WHERE id=1').first()).toEqual({amount:1.80});
   expect(await env.DB.prepare("SELECT fee_amount FROM trades WHERE account_id=12").first()).toEqual({fee_amount:0});
  });
  it('市場活躍時機器人偶爾真實成交，並發請求不重複執行',async()=>{
@@ -64,7 +64,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await get('/api/orderbook?symbol=YZU');
   const placed=await order({account_id:1,symbol:'YZU',side:'BUY',type:'LIMIT',price:41,shares:10,request_id:'limit-buy-test-0001'});
   expect(placed.body).toMatchObject({status:'OPEN',filledShares:0,remaining:10});
-  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:410.6});
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:410.2});
   expect((await get('/api/orders?id=1')).body.orders[0]).toMatchObject({status:'OPEN',price:41});
   const response=await SELF.fetch(base+'/api/orders/'+placed.body.orderId+'?account_id=1',{method:'DELETE',headers:{Cookie:await cookie(1)}});
   expect(response.status).toBe(200);
@@ -79,7 +79,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
   const sell=await order({account_id:2,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:5,request_id:'resting-sell-test-1'});
   expect(sell.body).toMatchObject({status:'FILLED',filledShares:5});
-  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:220.35});
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:220.1});
   const playerOrders=await get('/api/orders?id=1');
   expect(playerOrders.body.orders[0]).toMatchObject({status:'PARTIAL',filled_shares:5});
  });
@@ -90,7 +90,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await env.DB.prepare("UPDATE orders SET price=43 WHERE id=(SELECT id FROM orders WHERE account_id=1000000 AND symbol='YZU' AND side='SELL' AND status='OPEN' ORDER BY id LIMIT 1)").run();
   const result=await get('/api/orders?id=1');
   expect(result.body.orders[0]).toMatchObject({status:'FILLED',filled_shares:10});
-  expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=1').first()).toEqual({cash:99569.38,frozen_cash:0});
+  expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=1').first()).toEqual({cash:99569.82,frozen_cash:0});
   expect((await get('/api/history?symbol=YZU')).body.history.at(-1).price).toBe(43);
  });
  it('限價賣單凍結持股，不能重複出售，取消後能再次使用',async()=>{
@@ -116,9 +116,9 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect(state.cash).toBeLessThanOrEqual(100000);
   expect((await env.DB.prepare("SELECT SUM(shares) total FROM holdings WHERE account_id IN (1,2) AND symbol='YZU'").first()).total).toBe(10);
  });
- it('造市商產生買賣五檔，玩家買入並以掛單價交割',async()=>{
+ it('造市商產生買賣十檔，玩家買入並以掛單價交割',async()=>{
   const book=await get('/api/orderbook?symbol=2330');
-  expect(book.status).toBe(200);expect(book.body.asks.length).toBeGreaterThan(0);
+  expect(book.status).toBe(200);expect(book.body.asks.length).toBe(5);expect(book.body.bids.length).toBe(5);
   const makerPrice=book.body.asks[0].price;
   const result=await order({account_id:1,symbol:'2330',side:'BUY',type:'MARKET',shares:10,request_id:'one-test-request-0001'});
   expect(result.status).toBe(200);expect(result.body).toMatchObject({filledShares:10,remaining:0,status:'FILLED'});
@@ -130,8 +130,8 @@ describe('Sprint 2: 市價單及造市商',()=>{
  it('買單流動性不足時部分成交並取消餘量',async()=>{
   await get('/api/orderbook?symbol=YOUJIAN');
   await env.DB.prepare('UPDATE accounts SET cash=10000000 WHERE id=1').run();
-  const r=await order({account_id:1,symbol:'YOUJIAN',side:'BUY',type:'MARKET',shares:1000,request_id:'partial-request-0001'});
-  expect(r.status).toBe(200);expect(r.body.filledShares).toBe(340);expect(r.body.remaining).toBe(660);expect(r.body.status).toBe('CANCELLED');
+  const r=await order({account_id:1,symbol:'YOUJIAN',side:'BUY',type:'MARKET',shares:2000,request_id:'partial-request-0001'});
+  expect(r.status).toBe(200);expect(r.body.filledShares).toBe(1040);expect(r.body.remaining).toBe(960);expect(r.body.status).toBe('CANCELLED');
  });
  it('六檔股票含右鍵，不把舊資料中的股票刪除',async()=>{
   const r=await get('/api/stocks');expect(r.body.stocks.map(s=>s.symbol).sort()).toEqual(['2317','2330','2454','3711','YOUJIAN','YZU']);
@@ -233,8 +233,8 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const before=await env.DB.prepare("SELECT price FROM stocks WHERE symbol='2330'").first();
   expect(await maybeTick(env.DB,2000000000000)).toBe(true);
   expect(await maybeTick(env.DB,2000000001000)).toBe(false);
-  expect(await maybeTick(env.DB,2000000059000)).toBe(false);
-  expect(await maybeTick(env.DB,2000000060000)).toBe(true);
+  expect(await maybeTick(env.DB,2000000014000)).toBe(false);
+  expect(await maybeTick(env.DB,2000000015000)).toBe(true);
   expect(await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first()).toMatchObject({tick_count:2});
   expect(await env.DB.prepare("SELECT price FROM stocks WHERE symbol='2330'").first()).toEqual(before);
   expect(await env.DB.prepare('SELECT COUNT(*) n FROM price_history').first()).toMatchObject({n:0});
@@ -245,7 +245,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const large=await order({account_id:1,symbol:'2330',side:'BUY',shares:10000,request_id:'liquid-market-0001'});
   expect(large.body.filledShares).toBe(10000);
   const small=await order({account_id:1,symbol:'YZU',side:'BUY',shares:10000,request_id:'thin-market-00001'});
-  expect(small.body.filledShares).toBe(510);expect(small.body.remaining).toBe(9490);
+  expect(small.body.filledShares).toBe(1560);expect(small.body.remaining).toBe(8440);
   expect(new Set(large.body.fills.map(f=>f.price)).size).toBe(1);
   expect(new Set(small.body.fills.map(f=>f.price)).size).toBeGreaterThan(1);
  });

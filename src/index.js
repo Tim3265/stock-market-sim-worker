@@ -9,7 +9,7 @@ import { executeTrade } from "./domain/trading.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
 import { PAGE_HTML } from "./page.js";
-import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed } from './domain/orders.js';
+import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed, BROKER } from './domain/orders.js';
 import { maybeTick } from './domain/marketMaker.js';
 import * as auth from './domain/auth.js';
 import { runBotActivity } from './domain/botActivity.js';
@@ -50,7 +50,8 @@ async function route(request, env) {
   if (path === '/api/account/recharge' && request.method === 'POST') {
     const current = await auth.session(env.DB, request);
     if (!current) return Response.json({ ok: false }, { status: 401 });
-    await env.DB.prepare('UPDATE accounts SET cash=10000000, initial_cash=10000000 WHERE id=?').bind(current.account_id).run();
+    const initialCash = await auth.marketInitialCash(env.DB);
+    await env.DB.prepare('UPDATE accounts SET cash=?, initial_cash=? WHERE id=?').bind(initialCash, initialCash, current.account_id).run();
     return ok({ message: '已充值千萬籌碼！' });
   }
   if (path === '/api/live' && request.method === 'GET') {
@@ -99,6 +100,7 @@ async function route(request, env) {
     const queriesList = stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 100").bind(sym));
     const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
+    const index = upgraded ? await computeIndex(env.DB) : null;
     const events = getActiveEvents(state?.tick_count || 0);
     const histories = Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()]));
     return ok({
@@ -111,9 +113,17 @@ async function route(request, env) {
       asks: bookResult.asks || [],
       fills,
       events,
+      index,
+      broker: BROKER,
       histories,
       username: session ? session.username : null
     });
+  }
+  if (path === '/api/index' && request.method === 'GET') {
+
+    const index = await computeIndex(env.DB);
+    const history = (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").all()).results.reverse();
+    return ok({ index, history });
   }
   if (path === '/api/events' && request.method === 'GET') {
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
@@ -162,7 +172,7 @@ async function route(request, env) {
     const current=await auth.session(env.DB,request);
     return current?ok({username:current.username}):Response.json({ok:false},{status:401});
   }
-  const protectedPath=path==='/api/account'||path==='/api/trades'||path==='/api/trade'||path==='/api/orders'||/^\/api\/orders\/\d+$/.test(path);
+  const protectedPath=path==='/api/account'||path==='/api/trades'||path==='/api/trades/export'||path==='/api/trade'||path==='/api/orders'||/^\/api\/orders\/\d+$/.test(path);
   const current=protectedPath?await auth.session(env.DB,request):null;
   if(protectedPath&&!current)return Response.json({ok:false,code:'UNAUTHENTICATED',message:'請先登入'},{status:401});
 
@@ -171,6 +181,30 @@ async function route(request, env) {
     const queries = stocks.map(stock => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(stock.symbol));
     const rows = queries.length ? await env.DB.batch(queries) : [];
     return ok({ histories: Object.fromEntries(stocks.map((stock,i)=>[stock.symbol,rows[i].results.reverse()])) });
+  }
+  if(path==='/api/bots' && request.method==='GET'){
+    const bots=(await env.DB.prepare("SELECT id,name,bot_kind,ROUND(cash,2) cash FROM accounts WHERE is_bot=1 ORDER BY id").all()).results;
+    const holdings=(await env.DB.prepare(`SELECT h.account_id,a.name bot_name,h.symbol,s.nickname,h.shares,h.frozen_shares
+      FROM holdings h JOIN accounts a ON a.id=h.account_id JOIN stocks s ON s.symbol=h.symbol
+      WHERE a.is_bot=1 AND h.shares>0 ORDER BY h.account_id,h.symbol`).all()).results;
+    return ok({bots,holdings});
+  }
+  if(path==='/api/volume' && request.method==='GET'){
+    const symbol=url.searchParams.get('symbol')||'';
+    if(!symbol)return fail('INVALID_INPUT','請提供 symbol');
+    const rows=(await env.DB.prepare(`SELECT strftime('%Y-%m-%d %H:%M',created_at) minute, SUM(shares) volume, COUNT(*) trades
+      FROM order_fills WHERE symbol=? AND created_at>=datetime('now','-6 hours')
+      GROUP BY minute ORDER BY minute`).bind(symbol).all()).results;
+    return ok({symbol,volume:rows});
+  }
+  if(path==='/api/trades/export' && request.method==='GET'){
+    if(!current)return Response.json({ok:false,code:'UNAUTHENTICATED',message:'請先登入'},{status:401});
+    const rows=(await env.DB.prepare(`SELECT t.id,t.symbol,s.name,t.side,t.shares,t.price,t.amount,t.fee_amount,t.created_at
+      FROM trades t JOIN stocks s ON s.symbol=t.symbol WHERE t.account_id=? ORDER BY t.id`).bind(current.account_id).all()).results;
+    const header='id,symbol,name,side,shares,price,amount,fee,created_at';
+    const esc=v=>{const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+    const csv=[header,...rows.map(r=>[r.id,r.symbol,r.name,r.side,r.shares,r.price,r.amount,r.fee_amount,r.created_at].map(esc).join(','))].join('\r\n');
+    return new Response(csv,{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="trades.csv"'}});
   }
   if(path==='/api/leaderboard' && request.method==='GET'){
     const rows=await env.DB.prepare(`SELECT c.username,ROUND(a.cash+COALESCE(SUM(h.shares*s.price),0),2) total_assets
@@ -290,6 +324,21 @@ async function postTrade(request, env) {
   if (!result.ok) return fail(result.code, result.message);
 
   return ok({ trade: result.trade });
+}
+
+// ---------- 六檔加權指數 ----------
+// 以流動性為權重、當日參考價為基期（1000點），反映六檔整體漲跌。
+async function computeIndex(db) {
+  const stocks = (await db.prepare("SELECT symbol,price,ref_price,ref_date,liquidity FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN')").all()).results;
+  const date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  let base = 0, cur = 0;
+  for (const s of stocks) {
+    const w = Number(s.liquidity) || 0;
+    const ref = s.ref_date === date ? Number(s.ref_price) : Number(s.price);
+    base += w * ref;
+    cur += w * Number(s.price);
+  }
+  return base > 0 ? Math.round(1000 * cur / base * 100) / 100 : 1000;
 }
 
 // ---------- 小工具 ----------
