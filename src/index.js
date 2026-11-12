@@ -51,8 +51,13 @@ async function route(request, env) {
     const current = await auth.session(env.DB, request);
     if (!current) return Response.json({ ok: false }, { status: 401 });
     const initialCash = await auth.marketInitialCash(env.DB);
-    // 只補現金，不動 initial_cash，報酬率基準維持不變。
-    await env.DB.prepare('UPDATE accounts SET cash=? WHERE id=?').bind(initialCash, current.account_id).run();
+    // 只補現金，不動 initial_cash，報酬率基準維持不變。先撤銷未成交委託、清空凍結，避免 frozen_cash > cash 觸發 CHECK。
+    await env.DB.batch([
+      env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=? AND status IN ('OPEN','PARTIAL')").bind(current.account_id),
+      env.DB.prepare('UPDATE accounts SET frozen_cash=0 WHERE id=?').bind(current.account_id),
+      env.DB.prepare('UPDATE holdings SET frozen_shares=0 WHERE account_id=?').bind(current.account_id),
+      env.DB.prepare('UPDATE accounts SET cash=? WHERE id=?').bind(initialCash, current.account_id),
+    ]);
     return ok({ message: '已充值千萬籌碼！' });
   }
   if (path === '/api/live' && request.method === 'GET') {
@@ -257,7 +262,7 @@ async function route(request, env) {
     return ok({message:`已快轉 ${ticks} 輪`,ticks});
   }
   if (path === '/api/orders' && request.method === 'GET') {
-    const result=await listOrders(env.DB,current.account_id);
+    const result=await listOrders(env.DB,current.account_id,url.searchParams.get('status')||'');
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
   const cancelMatch=path.match(/^\/api\/orders\/(\d+)$/);
@@ -311,7 +316,7 @@ async function getAccount(env, accountId, upgraded) {
   if (!result.ok) return fail(result.code, result.message);
   if (upgraded) {
     const accRow = await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=?').bind(accountId).first();
-    if (accRow) { result.account.frozen_cash = accRow.frozen_cash; }
+    if (accRow) { result.account.frozen_cash = accRow.frozen_cash; result.account.available_cash = Math.round((result.account.cash - accRow.frozen_cash) * 100) / 100; }
     const frozen=(await env.DB.prepare('SELECT symbol,frozen_shares FROM holdings WHERE account_id=?').bind(accountId).all()).results;
     const bySymbol=Object.fromEntries(frozen.map(row=>[row.symbol,row.frozen_shares]));
     for(const holding of result.holdings)holding.frozen_shares=bySymbol[holding.symbol]||0;

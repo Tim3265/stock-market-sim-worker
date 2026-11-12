@@ -1,5 +1,5 @@
 -- Legacy v1 bootstrap for a brand-new empty database only; existing tables cause an error.
--- 生產環境與測試的完整 schema 以 migrations/ 目錄為準（0001~0008），本檔僅供課程初期示範種子資料。
+-- 生產環境與測試的完整 schema 以 migrations/ 目錄為準（0001~0009），本檔僅供課程初期示範種子資料。
 -- 股票主檔
 CREATE TABLE stocks (
   symbol TEXT PRIMARY KEY,           -- 股票代號，例如 2330
