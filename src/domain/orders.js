@@ -32,7 +32,7 @@ export async function cancelOrder(db,accountId,orderId){
   if(order.type!=='LIMIT'||!['OPEN','PARTIAL'].includes(order.status))return err('INVALID_INPUT','此委託無法取消');
   const remaining=order.shares-order.filled_shares;
   const ops=[prepare(db,'UPDATE market_state SET match_seq=match_seq+1 WHERE id=1 AND match_seq=?',version.match_seq),db.prepare('INSERT INTO transaction_guard(value) SELECT changes()'),prepare(db,"UPDATE orders SET status='CANCELLED' WHERE id=?",order.id)];
-  if(order.side==='BUY')ops.push(prepare(db,'UPDATE accounts SET frozen_cash=ROUND(frozen_cash-?,2) WHERE id=?',money((cents(order.price)+(order.fee_scheme?feeCents(cents(order.price),1):0))*remaining),accountId));
+  if(order.side==='BUY')ops.push(prepare(db,'UPDATE accounts SET frozen_cash=ROUND(frozen_cash-?,2) WHERE id=?',money(cents(order.price)*remaining+(order.fee_scheme?feeCents(cents(order.price),remaining):0)),accountId));
   else ops.push(prepare(db,'UPDATE holdings SET frozen_shares=frozen_shares-? WHERE account_id=? AND symbol=?',remaining,accountId,order.symbol));
   ops.push(db.prepare('DELETE FROM transaction_guard'));
   try{await db.batch(ops);return {ok:true,orderId,status:'CANCELLED'};}catch(e){if(String(e).includes('market_revision_guard'))continue;throw e;}
@@ -53,7 +53,7 @@ export async function matchCrossed(db){
     ORDER BY b.symbol,b.price DESC,b.id ASC,s.price ASC,s.id ASC LIMIT 1`).first();
   if(!pair)return;
   const shares=Math.min(pair.bid_qty,pair.ask_qty),price=pair.bid_id<pair.ask_id?pair.bid:pair.ask;
-  const amount=money(cents(price)*shares),reserved=money((cents(pair.bid)+(pair.bid_fee?feeCents(cents(pair.bid),1):0))*shares);
+  const amount=money(cents(price)*shares),reserved=money(cents(pair.bid)*shares+(pair.bid_fee?feeCents(cents(pair.bid),shares):0));
   const buyerFee=pair.bid_fee?money(feeCents(cents(price),shares)):0,sellerFee=pair.ask_fee?money(feeCents(cents(price),shares)):0;
   const maker=Math.min(pair.bid_id,pair.ask_id),taker=Math.max(pair.bid_id,pair.ask_id);
   const ops=[
@@ -104,7 +104,8 @@ export async function placeMarketOrder(db,input){
   const plan=matchOrders({accountId,side,shares,limitPrice:type==='LIMIT'?limit:null},eligible),filled=shares-plan.remaining;
   const total=plan.fills.reduce((sum,f)=>sum+cents(f.price)*f.shares,0);
   const takerFee=plan.fills.reduce((sum,f)=>sum+feeCents(cents(f.price),f.shares),0);
-  const reserved=type==='LIMIT'?(cents(limit)+feeCents(cents(limit),1))*plan.remaining:0;
+  // 預扣手續費與成交時一致：用整體股數計算，避免逐股進位造成的誤差。
+  const reserved=type==='LIMIT'?(cents(limit)*plan.remaining+feeCents(cents(limit),plan.remaining)):0;
   if(side==='BUY'&&cents(account.cash-account.frozen_cash)<total+takerFee+reserved)return err('INSUFFICIENT_CASH','可用現金不足');
   const status=plan.remaining?(type==='LIMIT'?(filled?'PARTIAL':'OPEN'):'CANCELLED'):'FILLED';
   const ops=[
@@ -143,7 +144,7 @@ export async function placeMarketOrder(db,input){
   }
   ops.push(db.prepare('DELETE FROM transaction_guard'));
   try{await db.batch(ops);return readResult(db,await prepare(db,'SELECT * FROM orders WHERE request_id=?',requestId).first());}
-  catch(e){const message=String(e);if(message.includes('market_revision_guard')||message.includes('UNIQUE constraint failed: orders.request_id'))continue;throw e;}
+  catch(e){const message=String(e);if(message.includes('market_revision_guard')||message.includes('UNIQUE constraint failed: orders.request_id'))continue;if(message.includes('INSUFFICIENT_CASH'))return err('INSUFFICIENT_CASH','可用現金不足');if(message.includes('INSUFFICIENT_SHARES'))return err('INSUFFICIENT_SHARES','可用持股不足');throw e;}
  }
  return err('CONFLICT','市場正在更新，請重試');
 }

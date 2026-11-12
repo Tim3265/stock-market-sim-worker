@@ -86,7 +86,8 @@ describe('玩家登入和資料隔離',()=>{
   const second=await read('/api/trades?limit=20&offset=20&symbol=YZU');expect(second.trades).toHaveLength(1);expect(second.hasMore).toBe(false);
   expect((await read('/api/trades?side=SELL')).trades).toHaveLength(0);
   const leaderboard=await (await SELF.fetch(base+'/api/leaderboard')).json();
-  expect(leaderboard.players.map(p=>p.username)).toEqual(['alpha','bravo']);
+  expect(leaderboard.players.filter(p=>!p.is_bot).map(p=>p.username).slice(0,2)).toEqual(['alpha','bravo']);
+  expect(leaderboard.players.some(p=>p.is_bot)).toBe(true);
   expect(b).toBeTruthy();
  });
  it('四位玩家同時下單，各自持股不互相覆寫',async()=>{

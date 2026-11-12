@@ -64,7 +64,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await get('/api/orderbook?symbol=YZU');
   const placed=await order({account_id:1,symbol:'YZU',side:'BUY',type:'LIMIT',price:41,shares:10,request_id:'limit-buy-test-0001'});
   expect(placed.body).toMatchObject({status:'OPEN',filledShares:0,remaining:10});
-  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:410.2});
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:410.17});
   expect((await get('/api/orders?id=1')).body.orders[0]).toMatchObject({status:'OPEN',price:41});
   const response=await SELF.fetch(base+'/api/orders/'+placed.body.orderId+'?account_id=1',{method:'DELETE',headers:{Cookie:await cookie(1)}});
   expect(response.status).toBe(200);
@@ -79,7 +79,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=1000000 AND symbol='YZU' AND side='BUY'").run();
   const sell=await order({account_id:2,symbol:'YZU',side:'SELL',type:'LIMIT',price:44,shares:5,request_id:'resting-sell-test-1'});
   expect(sell.body).toMatchObject({status:'FILLED',filledShares:5});
-  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:220.1});
+  expect(await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=1').first()).toEqual({frozen_cash:220.08});
   const playerOrders=await get('/api/orders?id=1');
   expect(playerOrders.body.orders[0]).toMatchObject({status:'PARTIAL',filled_shares:5});
  });
