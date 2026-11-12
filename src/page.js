@@ -364,7 +364,7 @@ async function place(side){
   const r=await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.ok){
     msg.className='ok';
-    msg.textContent=r.status==='CANCELLED'?('成交 '+r.filledShares+' 股，剩餘 '+r.remaining+' 股無對手已取消 (IOC)'):('成交 '+r.filledShares+' 股 @ $'+fmt(r.avgPrice)+'，手續費 $'+fmt(r.fee));
+    msg.textContent=r.status==='OPEN'?('委託已掛單，股數 '+r.remaining+' 股'):(r.status==='PARTIAL'?('部分成交 '+r.filledShares+' 股，剩餘 '+r.remaining+' 股繼續掛單'):('成交 '+r.filledShares+' 股 @ $'+fmt(r.avgPrice)+'，手續費 $'+fmt(r.fee)));
     poll();
   }else{msg.className='err';msg.textContent=r.message||'下單失敗';}
 }

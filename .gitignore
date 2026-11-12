@@ -5,5 +5,12 @@ node_modules/
 .local-sprint2-proof/
 .dev.vars
 *.log
+apple_*.png
+pixel_market.png
+start-dev.bat
+wrangler.deploy.json
+wrangler.qa.json
+wrangler.temp.json
+.local-benchmark/
 .DS_Store
 Thumbs.db

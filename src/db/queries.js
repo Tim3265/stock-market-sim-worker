@@ -78,6 +78,7 @@ export async function listTrades(db, accountId, limit, offset=0, filters={}) {
 // 順序很重要：先 INSERT trades，再更新餘額／持股。
 // schema.sql 的 Trigger 會在 INSERT 時檢查「交易前」的現金與持股，
 // 因此即使兩個請求同時下單，資料庫也不會出現負現金或超賣。
+// @deprecated 舊版直接交割的 SQL 建構器，僅供遷移前測試使用。
 export function buildTradeStatements(db, { accountId, symbol, side, shares, price, amount }) {
   const statements = [
     db
