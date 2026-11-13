@@ -88,7 +88,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
   .stock-card .name{font-size:13px; margin:4px 0;}
   .stock-card .price{font-size:18px;}
   .chg-pill{display:inline-block;margin-top:2px;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;color:#fff;}
-  .chg-pill.up{background:var(--red);} .chg-pill.down{background:var(--green);color:#08131f;}
+  .chg-pill.up{background:var(--red);color:#fff !important;} .chg-pill.down{background:var(--green);color:#08131f !important;}
   .spark-btn{display:block;cursor:pointer;margin-top:4px;}
   .rank{display:inline-block;min-width:22px;text-align:center;padding:1px 6px;border:2px solid var(--line);font-weight:700;}
   .rank.r1{background:var(--gold);color:#14162b;border-color:#c8951a;}
@@ -193,9 +193,9 @@ export const PAGE_HTML = `<!DOCTYPE html>
   <h1><span id="login-coin" class="px-icon" style="vertical-align:-4px"></span> 股市模擬大戶<span class="px-cursor"></span></h1>
   <div class="sub">PIXEL STOCK TRADER · 六檔虛擬市場 · 大樹證券 2.8 折</div>
   <div id="login-box" class="panel">
-    <input id="nickname" maxlength="6" placeholder="想個稱號（留空隨機，最多 6 字）">
+    <input id="nickname" maxlength="6" placeholder="輸入名字（留空隨機，最多 6 字）">
     <button id="btn-play" style="font-size:14px; padding:14px;">▶ 開始交易</button>
-    <div class="hint">訪客模式：暱稱即可開戶，初始資金依市場總市值計算</div>
+    <div class="hint">名字 = 帳號 = 密碼：輸入同一個名字就會回到同一個帳戶（留空則隨機開戶）</div>
   </div>
 </div>
 
@@ -387,22 +387,22 @@ const PX_ICONS={
   ['................','................','................','................','................','..RRR...RRR.....','.RwRRR.RwRRR....','RRRRRRRRRRRRRR..','.rrrrrrrrrrrr...','..RRR...RRR.....','.RwRRR.RwRRR....','RRRRRRRRRRRRRR..','.rrrrrrrrrrrr...','................','................','................'],
   ['................','................','................','................','................','...RRR...RRR....','..RwRRR.RwRRR...','.RRRRRRRRRRRRRR.','..rrrrrrrrrrrr..','...RRR...RRR....','..RwRRR.RwRRR...','.RRRRRRRRRRRRRR.','..rrrrrrrrrrrr..','................','................','................'],
   ['................','................','................','................','................','.RRR...RRR......','RwRRR.RwRRR.....','RRRRRRRRRRRRR...','rrrrrrrrrrrr....','.RRR...RRR......','RwRRR.RwRRR.....','RRRRRRRRRRRRR...','rrrrrrrrrrrr....','................','................','................']]},
- '2454':{pal:{Y:'#ffd23f',y:'#c8951a',w:'#f4f7ff',K:'#14162b'},frames:[
-  ['................','......YYYK......','.....YYYK.......','....YYYK........','...YYYYK........','..YYYYYYYK......','....YYYK........','...YYYK.........','..YYYK..........','.YYYK...........','YYYK............','.YYK............','................','................','................','................'],
-  ['................','......YYwK......','.....YYwYK......','....YYwYK.......','...YYYwYK.......','..YYwYYYYK......','....YYYK........','...YYYK.........','..YYYK..........','.YYYK...........','YYYK............','.YYK............','................','................','................','................'],
-  ['................','......YYYK......','.....YYYK.......','....YYYK........','...YYYYK........','..YYYYYYYK......','....YYwK........','...YYwK.........','..YYwK..........','.YYwK...........','YYwK............','.YwK............','................','................','................','................']]},
+ '2454':{pal:{Y:'#ffd23f',K:'#14162b',C:'#4dd0e1',w:'#f4f7ff'},frames:[
+  ['................','................','.YY..........YY.','.YYY........YYY.','.YYYY......YYYY.','.YYKYY....YYKYY.','.YYKKYY..YYKKYY.','.YYKYYYYYYKYY...','.YYKKKKKKKKYY...','.YY..........YY.','.YY..........YY.','.YY..........YY.','.YY..........YY.','.CC..........CC.','................','................'],
+  ['................','................','.YY..........YY.','.YYY........YYY.','.YYYY......YYYY.','.YYKYY....YYKYY.','.YYKKYY..YYKKYY.','.YYKYYYwwYKYY...','.YYKKKKKKKKYY...','.YY..........YY.','.YY..........YY.','.YY..........YY.','.YY..........YY.','.CC..........CC.','................','................'],
+  ['................','................','.YY..........YY.','.YYY........YYY.','.YYYY......YYYY.','.YYKYY....YYKYY.','.YYKKYY..YYKKYY.','.YYKYYYYYYKYY...','.YYKKKKKKKKYY...','.YY..........YY.','.YY..........YY.','.YY..........YY.','.YY..........YY.','.ww..........ww.','................','................']]},
  '3711':{pal:{O:'#ff9f2e',Y:'#ffd23f',m:'#c8d0e8',w:'#f4f7ff',b:'#1e5aa8',B:'#4db2ff',K:'#14162b'},frames:[
   ['................','...O.O....mm....','..OYYYO..mwwm...','.OYYYYYOm.mwwm..','..OYYYO..mmmm...','...O.O....mm....','................','................','..bb..bb..bb....','bbbbbbbbbbbbbb..','.bb..bb..bb..bb.','bbbbbbbbbbbbbb..','.bb..bb..bb..bb.','................','................','................'],
   ['................','...Y.Y....mm....','..OYYYO..mwwm...','.OYYYYYOm.mwwm..','..OYYYO..mmmm...','...Y.Y....mm....','................','................','...bb..bb..bb...','.bbbbbbbbbbbbbb.','..bb..bb..bb..bb','.bbbbbbbbbbbbbb.','..bb..bb..bb..bb','................','................','................'],
   ['................','...O.O....ww....','..OYYYO..mwwm...','.OYYYYYOm.mwwm..','..OYYYO..mwww...','...O.O....ww....','................','................','..bb..bb..bb....','bbbbbbbbbbbbbb..','.bb..bb..bb..bb.','bbbbbbbbbbbbbb..','.bb..bb..bb..bb.','................','................','................']]},
- 'YZU':{pal:{B:'#4db2ff',b:'#1e5aa8',w:'#f4f7ff',K:'#14162b'},frames:[
-  ['................','................','................','................','................','................','................','..........BB....','........BBwB....','......BBBBBB....','..BBBBBBBB......','.BBBB....BB.....','BBB....BB.......','.BB...BB........','..BB............','................'],
-  ['................','................','..........BB....','........BBwB....','......BBBBBB....','....BBBBBB......','..BBBBBB........','.BBBB....BB.....','BBB....BB.......','.BB...BB........','..BB.BB.........','...BB...........','................','................','................','................'],
-  ['................','..........BB....','........BBwB....','......BBBBBB....','....BBBBBB......','..BBBBBB........','.BBBB....BB.....','BBB....BB.......','.BB...BB........','..BB.BB.........','...BB...........','................','................','................','................','................']]},
- 'YOUJIAN':{pal:{K:'#14162b',g:'#8a90b8',G:'#c8d0e8',w:'#f4f7ff',R:'#ff5470'},frames:[
-  ['................','................','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','KGGGGKGGGGGGGK..','KGGGGKwwKGGGGK..','KGGGGKKKKGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................'],
-  ['................','................','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','KGGGGKGGGGGGGK..','KGGGGKKKKGGGGK..','KGGGGKwwKGGGGK..','KGGGGKGGGGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................'],
-  ['................','................','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','KGGGGKGGGGGGGK..','KGGGGRwwKGGGGK..','KGGGGKKKKGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................']]},
+ 'YZU':{pal:{B:'#4db2ff',w:'#f4f7ff'},frames:[
+  ['................','BB..............','BwB.............','.BB.............','..BBB....B......','...BBBB.BBB.....','....BBBBBBBB....','.....BBBBBBwB...','......BBBBBBB...','.......BBBBB....','........BBB.....','.........B......','................','................','................','................'],
+  ['BB..............','BwB.............','.BB.............','..BBB....B......','...BBBB.BBB.....','....BBBBBBBB....','.....BBBBBBwB...','......BBBBBBB...','.......BBBBB....','........BBB.....','.........B......','................','................','................','................','................'],
+  ['................','................','BB..............','BwB.............','.BB.............','..BBB....B......','...BBBB.BBB.....','....BBBBBBBB....','.....BBBBBBwB...','......BBBBBBB...','.......BBBBB....','........BBB.....','.........B......','................','................','................']]},
+ 'YOUJIAN':{pal:{K:'#14162b',G:'#c8d0e8',w:'#f4f7ff',R:'#ff5470'},frames:[
+  ['................','.......KK.......','.......KK.......','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','.KGGKwwKGGGGK...','.KGGKwwKGGGGK...','.KGGKKKKGGGGK...','.KGGGGGGGGGGK...','.KGGGGGGGGGGK...','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................'],
+  ['................','.......KK.......','.......KK.......','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','.KGGKwwKGGGGK...','.KGGKwwKGGGGK...','.KGGKKKKGGGGK...','.KGGGGGGGGGGK...','.KGGGGGGGGGGK...','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................'],
+  ['................','.......KK.......','.......KK.......','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','.KGGKRRKGGGGK...','.KGGKRRKGGGGK...','.KGGKKKKGGGGK...','.KGGGGGGGGGGK...','.KGGGGGGGGGGK...','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................']]},
  COIN:{pal:{K:'#14162b',Y:'#ffd23f',y:'#c8951a',w:'#f4f7ff'},frames:[
   ['................','................','....KKKKKK......','..KYYYYYYYK.....','.KYYKYYKYYYK....','KYYKYYKKYYYK....','KYYKYYYYYYYK....','KYYKKYYKKYYK....','KYYKYYYYYYYK....','KYYKYYKKYYYK....','.KYYKYYKYYYK....','..KYYYYYYYK.....','....KKKKKK......','................','................','................'],
   ['................','................','......KK........','.....KYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','.....KYYK.......','......KK........','................','................','................'],
@@ -671,7 +671,7 @@ function renderDetail(){
   // 只更新標題、走勢圖與盤口；下單表單維持不動，避免輪詢時搶走輸入框焦點
   const dn=s.nickname||s.name;
   $('#detail-title').innerHTML=dn+' <span style="color:var(--dim); font-size:12px; font-weight:400">'+(dn!==s.name?s.name+' · ':'')+s.symbol+'</span> $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
-  $('#ord-sym').textContent='下單：'+s.symbol+' '+(s.nickname||s.name);
+  $('#ord-sym').innerHTML='下單 '+pxIconAnim(s.symbol,16);
   const vals=hist.map(p=>Number(p.price));
   const hi=vals.length?Math.max(...vals):s.price, lo=vals.length?Math.min(...vals):s.price;
   const dChg=s.price-s.ref_price, dChgPct=pct(s.price,s.ref_price);
