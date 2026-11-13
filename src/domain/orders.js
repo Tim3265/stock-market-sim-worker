@@ -4,7 +4,7 @@ const cents=x=>Math.round(Number(x)*100);
 const money=x=>x/100;
 
 // 大樹證券：手續費 0.1425% 打 2.8 折 = 0.0399%，向上取到 0.01 元。
-export const BROKER = { name: '大樹證券', feeRate: 0.000399, listFeeRate: 0.001425, discount: '2.8折' };
+// 手續費率見下方 feeCents；UI 文案見 page.js broker-note
 const feeCents=(priceCents,shares)=>Math.ceil(priceCents*shares*399/1000000);
 const err=(code,message)=>({ok:false,code,message});
 const prepare=(db,sql,...values)=>db.prepare(sql).bind(...values);
