@@ -8,7 +8,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>股市模擬大戶 — PIXEL Trader</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0d0f1a; --panel:#171a2b; --panel2:#1f2338; --line:#2e3352;
@@ -24,12 +24,11 @@ export const PAGE_HTML = `<!DOCTYPE html>
       linear-gradient(90deg, rgba(46,51,82,.25) 1px, transparent 1px);
     background-size:32px 32px;
     color:var(--txt);
-    font-family:'Press Start 2P', monospace;
-    font-size:13px; line-height:1.7;
-    image-rendering:pixelated;
+    font-family:'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size:14px; line-height:1.7;
   }
   .hidden{display:none !important;}
-  button,input{font-family:inherit; font-size:13px;}
+  button,input{font-family:inherit; font-size:14px;}
   button{
     background:var(--gold); color:#1a1a2e; border:0; padding:10px 14px; cursor:pointer;
     box-shadow:0 var(--px) 0 #b8860b; font-weight:bold;
@@ -49,7 +48,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:24px; text-align:center; padding:24px;
   }
-  #login-screen h1{
+  #login-screen h1{font-family:'Press Start 2P', monospace;
     font-size:clamp(22px,5vw,44px); color:var(--gold);
     text-shadow:4px 4px 0 #b8860b, 8px 8px 0 rgba(0,0,0,.5);
   }
@@ -69,7 +68,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     padding:10px 0; display:flex; flex-direction:column; gap:8px;
     border-bottom:2px solid var(--line);
   }
-  header .logo{color:var(--gold); font-size:14px; text-shadow:2px 2px 0 #b8860b;}
+  header .logo{color:var(--gold); font-size:14px; text-shadow:2px 2px 0 #b8860b; font-family:'Press Start 2P', monospace;}
   #index-chip{display:flex; align-items:center; gap:10px; padding:6px 12px; background:var(--panel2); border:2px solid var(--line);}
   #index-chip .up{color:var(--red);} #index-chip .down{color:var(--green);}
   header .spacer{flex:1;}
@@ -111,7 +110,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
   #order-msg{font-size:11px; min-height:18px;}
   #order-msg.ok{color:var(--green);} #order-msg.err{color:var(--red);}
 
-  table{width:100%; border-collapse:collapse; font-size:11px;}
+  table{width:100%; border-collapse:collapse; font-size:13px;}
   th,td{padding:6px 8px; text-align:right; border-bottom:1px solid var(--line);}
   th:first-child,td:first-child{text-align:left;}
   th{color:var(--dim);}
@@ -140,7 +139,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
   <header>
     <span class="logo">▚▞ 股市模擬大戶</span>
     <span id="index-chip">大盤指數 <b id="index-val">----</b> <span id="index-chg"></span></span>
-    <span id="cash-chip">現金 $<span id="cash-val">-</span></span>
+    <span id="cash-chip">現金 $<span id="cash-val">-</span> <span id="frozen-val" style="color:var(--dim); font-size:11px"></span></span>
     <span class="spacer"></span>
     <span id="user-chip" style="color:var(--dim)"></span>
     <button class="ghost" id="btn-recharge">重設資金</button>
@@ -184,9 +183,9 @@ export const PAGE_HTML = `<!DOCTYPE html>
       <div class="panel" style="padding:16px">
         <div class="section-title">資產總覽</div>
         <div id="portfolio-summary" style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:14px;"></div>
-        <table id="holdings-table"><thead><tr><th>股票</th><th>持有股數</th><th>現價</th><th>市值</th><th>凍結</th></tr></thead><tbody></tbody></table>
+        <table id="holdings-table"><thead><tr><th>股票</th><th>持有股數</th><th>市值</th></tr></thead><tbody></tbody></table>
         <div class="section-title" style="margin-top:18px">交易紀錄 <a id="csv-link" href="/api/trades/export" style="color:var(--blue); font-size:10px">下載 CSV</a></div>
-        <table id="trades-table"><thead><tr><th>時間</th><th>股票</th><th>買賣</th><th>股數</th><th>價格</th><th>金額</th><th>手續費</th></tr></thead><tbody></tbody></table>
+        <table id="trades-table"><thead><tr><th>時間</th><th>股票</th><th>買賣</th><th>股數</th><th>價格</th><th>金額</th></tr></thead><tbody></tbody></table>
       </div>
     </section>
 
@@ -256,7 +255,7 @@ $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 function tick(){if(!document.hidden)poll();else timer=setTimeout(tick,1000);}
 async function poll(){
   try{
-    state=await api('/api/live?symbol='+selected);
+    state=await api('/api/live?symbol='+selected+(tab==='market'?'&light=1':''));
     render();
   }catch(e){/* 單次失敗不讓輪詢鏈斷掉 */}
   timer=setTimeout(tick,(state&&state.pollMs)||5000);
@@ -274,6 +273,7 @@ function start(){
     document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.toggle('active',x===b));
     ['market','portfolio','orders','fills','leaderboard','bots'].forEach(t=>$('#tab-'+t).classList.toggle('hidden',t!==tab));
     render();
+    poll(); // 切換分頁立刻抓一次完整資料，避免空白一個週期
   });
   poll();
 }
@@ -282,6 +282,9 @@ function render(){
   if(!state)return;
   $('#user-chip').textContent=state.username||'';
   $('#cash-val').textContent=fmt(state.account?state.account.cash:0);
+  const fv=$('#frozen-val');
+  const fz=state.account?Number(state.account.frozen_cash||0):0;
+  fv.textContent=fz>0?('（凍結 $'+fmt(fz)+'）'):'';
   if(state.index!=null){
     $('#index-val').textContent=fmt(state.index);
     const h=state.indexHistory;
@@ -292,7 +295,10 @@ function render(){
       chgEl.className=c>=0?'up':'down';
     }
   }
-  renderMarket();renderPortfolio();renderOrders();renderFills();
+  renderMarket();
+  if(state.trades!==undefined)renderPortfolio();
+  if(state.orders!==undefined)renderOrders();
+  if(state.fills!==undefined)renderFills();
   if(tab==='leaderboard')renderLeaderboard();
   if(tab==='bots')renderBots();
 }
@@ -376,16 +382,17 @@ async function place(side){
 
 function renderPortfolio(){
   const a=state.account;
+  const mv=(state.holdings||[]).reduce((s,h)=>s+h.market_value,0);
+  const fz=a?Number(a.frozen_cash||0):0;
   $('#portfolio-summary').innerHTML=a?[
-    ['可用現金','$'+fmt(a.available_cash!=null?a.available_cash:a.cash)],
-    ['凍結現金','$'+fmt(a.frozen_cash||0)],
-    ['持股市值','$'+fmt((state.holdings||[]).reduce((s,h)=>s+h.market_value,0))],
-    ['總資產','$'+fmt((a.cash||0)+(state.holdings||[]).reduce((s,h)=>s+h.market_value,0))]
-  ].map(p=>'<div><div style="color:var(--dim); font-size:10px">'+p[0]+'</div><div style="color:var(--green)">'+p[1]+'</div></div>').join(''):'請先登入';
+    ['可用現金','$'+fmt(a.available_cash!=null?a.available_cash:a.cash)+(fz>0?' <span style="color:var(--dim); font-size:11px">（凍結 $'+fmt(fz)+'）</span>':'')],
+    ['持股市值','$'+fmt(mv)],
+    ['總資產','$'+fmt((a.cash||0)+mv)]
+  ].map(p=>'<div><div style="color:var(--dim); font-size:11px">'+p[0]+'</div><div style="color:var(--green); font-size:16px">'+p[1]+'</div></div>').join(''):'請先登入';
   const hb=$('#holdings-table tbody');
-  hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+h.symbol+' '+h.name+'</td><td>'+h.shares+'</td><td>$'+fmt(h.price)+'</td><td>$'+fmt(h.market_value)+'</td><td>'+(h.frozen_shares||0)+'</td></tr>').join('')||'<tr><td colspan="5" style="color:var(--dim)">無持股</td></tr>';
+  hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+h.symbol+' '+h.name+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>$'+fmt(h.market_value)+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--dim)">無持股</td></tr>';
   const tb=$('#trades-table tbody');
-  tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+t.created_at+'</td><td>'+t.symbol+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td><td>$'+fmt(t.fee_amount||0)+'</td></tr>').join('')||'<tr><td colspan="7" style="color:var(--dim)">無交易紀錄</td></tr>';
+  tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+t.created_at+'</td><td>'+t.symbol+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無交易紀錄</td></tr>';
 }
 
 function renderOrders(){
