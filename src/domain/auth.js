@@ -64,7 +64,7 @@ export async function guestLogin(db, nickname) {
  const rand = Math.floor(1000 + Math.random() * 9000);
  const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 12) : '大戶_' + rand;
  const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '') || ('Whale_' + rand);
- const username = baseName.slice(0, 7) + '_' + randomHex(8);
+ const username = baseName.slice(0, 7) + '_' + randomHex(2);
  const salt = randomHex(16), hash = await derive(randomHex(16), salt);
  const id = await newAccountId(db);
  const initialCash = await marketInitialCash(db);
