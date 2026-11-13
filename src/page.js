@@ -269,7 +269,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
         <b id="k-title" style="font-size:16px"></b>
         <span style="color:var(--dim); font-size:11px">滾輪/雙指縮放 · 拖曳平移 · 點一下看十字線</span>
         <span style="flex:1"></span>
-        <button class="ghost" id="k-close">關閉 ✕</button>
+        <button class="ghost" id="k-close" style="min-height:36px">關閉 ✕</button>
       </div>
       <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px; flex-wrap:wrap">
         <div id="k-modes" style="display:flex; gap:4px">
@@ -488,7 +488,7 @@ function bindChart(){
   },{passive:false});
   cv.addEventListener('touchmove',e=>{e.preventDefault();if(!kLayout)return;const r=cv.getBoundingClientRect();
     if(e.touches.length===2&&kTouch&&kTouch.pinch){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(Math.abs(d-kTouch.pinch)>2){zoomAt(kTouch.pinch/d);kTouch.pinch=d;}return;}
-    if(e.touches.length===1&&kDrag){const x=(e.touches[0].clientX-r.left)*(840/r.width);if(Math.abs(x-kTouch.x)>8)kTouch.moved=true;kStart=kDrag.start-Math.round((x-kDrag.x)/kLayout.step);clampView();kHover=-1;drawChart();}
+    if(e.touches.length===1&&kDrag&&kTouch){const x=(e.touches[0].clientX-r.left)*(840/r.width);if(Math.abs(x-kTouch.x)>8)kTouch.moved=true;kStart=kDrag.start-Math.round((x-kDrag.x)/kLayout.step);clampView();kHover=-1;drawChart();}
   },{passive:false});
   cv.addEventListener('touchend',e=>{if(kTouch&&!kTouch.moved&&!kTouch.pinch&&kLayout){const t=e.changedTouches[0];const r=cv.getBoundingClientRect();const x=(t.clientX-r.left)*(840/r.width),yy=(t.clientY-r.top)*(380/r.height);const i=Math.floor((x-kLayout.L)/kLayout.step)+kStart;kHover=(i>=kStart&&i<kStart+kCount&&i<kCandles.length)?i:-1;kMouseY=Math.max(kLayout.T,Math.min(kLayout.T+kLayout.ph,yy));drawChart();}kTouch=null;kDrag=null;});
   cv.addEventListener('touchcancel',()=>{kTouch=null;kDrag=null;});
@@ -565,7 +565,7 @@ function renderMarket(){
     const prev=prevPrices[s.symbol]; let flash='';
     if(prev!=null&&prev!==s.price)flash=s.price>prev?' flash-up':' flash-down';
     prevPrices[s.symbol]=s.price;
-    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 雙擊開走勢圖">'
+    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 雙擊或點「走勢圖」開圖">'
       +'<div class="stock-head" title="'+(PX_NAMES[s.symbol]||s.name)+'">'+pxIcon(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
       +'<div class="price'+flash+'">$'+fmt(s.price)+'</div>'
       +'<div class="chg '+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</div>'
