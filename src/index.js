@@ -84,6 +84,7 @@ async function route(request, env) {
   }
   if (path === '/api/live' && request.method === 'GET') {
     const symbol = url.searchParams.get('symbol') || '2330';
+    const light = url.searchParams.get('light') === '1'; // 市場分頁只拿看盤需要的資料
     const tradeSide = url.searchParams.get('trade_side') || '';
     if (tradeSide && !['BUY', 'SELL'].includes(tradeSide)) return fail('INVALID_INPUT','篩選條件錯誤');
     let stocks = await queries.listStocks(env.DB);
@@ -103,18 +104,23 @@ async function route(request, env) {
           for (const h of holdings) h.frozen_shares = bySymbol[h.symbol] || 0;
         }
       }
-      const ordResult = await listOrders(env.DB, session.account_id);
-      if (ordResult.ok) {
-        orders = ordResult.orders;
-        if (account) {
-          account.frozen_cash = ordResult.frozenCash;
-          account.available_cash = ordResult.availableCash;
+      if (!light) {
+        const ordResult = await listOrders(env.DB, session.account_id);
+        if (ordResult.ok) {
+          orders = ordResult.orders;
+          if (account) {
+            account.frozen_cash = ordResult.frozenCash;
+            account.available_cash = ordResult.availableCash;
+          }
         }
+        trades = await queries.listTrades(env.DB, session.account_id, 30, 0, {side: tradeSide});
+      } else if (account) {
+        account.frozen_cash = (await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=?').bind(session.account_id).first()).frozen_cash;
+        account.available_cash = Number(account.cash) - Number(account.frozen_cash);
       }
-      trades = await queries.listTrades(env.DB, session.account_id, 30, 0, {side: tradeSide});
     }
     const bookResult = await book(env.DB, symbol);
-    const fills = upgraded ? (await env.DB.prepare(`
+    const fills = upgraded && !light ? (await env.DB.prepare(`
       SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
              b.name as buyer_name, b.is_bot as buyer_is_bot,
              se.name as seller_name, se.is_bot as seller_is_bot
@@ -125,22 +131,21 @@ async function route(request, env) {
       ORDER BY f.id DESC LIMIT 30
     `).all()).results : [];
     const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
-    const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 40").bind(sym)) : [];
+    const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 24").bind(sym)) : [];
     const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
     const index = upgraded ? await computeIndex(env.DB) : null;
-    const indexHistory = upgraded ? (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 120").all()).results.reverse() : [];
+    const indexHistory = upgraded ? (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 60").all()).results.reverse() : [];
     const events = getActiveEvents(state?.tick_count || 0);
     const histories = upgraded ? Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()])) : {};
     return ok({
       stocks,
       account,
       holdings,
-      orders,
-      trades,
+      ...(light?{}:{orders,trades}),
       bids: bookResult.bids || [],
       asks: bookResult.asks || [],
-      fills,
+      ...(light?{}:{fills}),
       events,
       index,
       indexHistory,

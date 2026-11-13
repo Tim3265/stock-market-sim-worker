@@ -80,3 +80,20 @@ it('部分成交的 MM 委託在 requote 時撤銷重掛，不會把 filled_shar
   const openCount = (await env.DB.prepare("SELECT COUNT(*) n FROM orders WHERE account_id=1000000 AND symbol='2330' AND status='OPEN'").first()).n;
   expect(openCount).toBeGreaterThan(0); // 新單已補上
 });
+
+it('/api/live?light=1 省略 orders/trades/fills，看盤資料仍完整', async () => {
+  const g = await SELF.fetch(base + '/api/auth/guest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nickname: 'light-ui' }) });
+  const cookie = g.headers.get('Set-Cookie').split(';')[0];
+  const light = await get('/api/live?symbol=2330&light=1', cookie);
+  expect(light.status).toBe(200);
+  expect('orders' in light.body).toBe(false);
+  expect('trades' in light.body).toBe(false);
+  expect('fills' in light.body).toBe(false);
+  expect(light.body.stocks.length).toBe(6);
+  expect(light.body.bids).toBeDefined();
+  expect(light.body.index).toBeGreaterThan(0);
+  expect(light.body.account).toBeTruthy();
+  const full = await get('/api/live?symbol=2330', cookie);
+  expect('trades' in full.body).toBe(true);
+  expect('orders' in full.body).toBe(true);
+});
