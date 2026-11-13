@@ -405,3 +405,8 @@ describe("黑天鵝與市場快訊 API", () => {
   const trades=(await env.DB.prepare('SELECT COUNT(*) n FROM trades').first()).n;
   expect(trades).toBe(fills*2);
  });
+
+ it('回歸：直接寫入 trades 超出總持股時被 trg_trade_sell_guard 擋下',async()=>{
+  await env.DB.prepare("INSERT INTO accounts(id,name,initial_cash,cash) VALUES(8,'辛',100,100)").run();
+  await expect(env.DB.prepare("INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(8,'YZU','SELL',5,45,225,0)").run()).rejects.toThrow(/INSUFFICIENT_SHARES/);
+ });

@@ -60,6 +60,7 @@ async function route(request, env) {
     if (!current) return fail('UNAUTHENTICATED', '請先登入');
     const initialCash = await auth.marketInitialCash(env.DB);
     // 只補現金，不動 initial_cash，報酬率基準維持不變。先撤銷未成交委託、清空凍結，避免 frozen_cash > cash 觸發 CHECK。
+    let done = false;
     for (let attempt = 0; attempt < 4; attempt++) {
       const version = await env.DB.prepare('SELECT match_seq FROM market_state WHERE id=1').first();
       try {
@@ -72,10 +73,12 @@ async function route(request, env) {
           env.DB.prepare('UPDATE accounts SET cash=? WHERE id=?').bind(initialCash, current.account_id),
           env.DB.prepare('DELETE FROM transaction_guard'),
         ]);
+        done = true;
         break;
       } catch (e) { if (String(e).includes('market_revision_guard')) continue; throw e; }
     }
-    return ok({ message: '已充值千萬籌碼！' });
+    if (!done) return fail('CONFLICT', '市場正在更新，請重試');
+    return ok({ message: '已重設資金為 $' + initialCash.toLocaleString('en-US') });
   }
   if (path === '/api/live' && request.method === 'GET') {
     const symbol = url.searchParams.get('symbol') || '2330';

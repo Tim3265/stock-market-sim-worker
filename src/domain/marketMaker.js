@@ -46,7 +46,7 @@ export async function maybeTick(db, now = Date.now()) {
     let reservedShares=0, remainingShares=inventoryBySymbol.get(stock.symbol)??0;
     for(const [offset,factor] of [[0.001,0.2],[0.003,0.5],[0.008,1],[0.015,1.5],[0.025,2]]){
       const qty=Math.max(1,Math.floor(stock.liquidity*factor));
-      const buy=Math.max(0.01,Math.max(low,round(center*(1-offset))));
+      const buy=Math.min(high,Math.max(0.01,Math.max(low,round(center*(1-offset)))));
       const sell=Math.min(high,Math.max(0.01,round(center*(1+offset))));
       const buyCents=Math.round(buy*100);
       const feeFor=q=>Math.ceil(buyCents*q*399/1000000);
