@@ -27,7 +27,7 @@ export async function maybeTick(db, now = Date.now(), intervalMs = TICK_INTERVAL
   let remainingCash=Math.round(Number(maker.cash)*100);
   const date=new Date(now+8*3600000).toISOString().slice(0,10);
 
-  // 每兩輪才重新報價一次：D1 rows written 是硬額度，報價改為 in-place 更新
+  // 每三輪才重新報價一次：D1 rows written 是硬額度，報價改為 in-place 更新
   // （保住 order id 與 FIFO 時間優先），大幅降低每次 tick 的寫入量。
   const requote=Number(state.tick_count)%3===0;
 
@@ -71,13 +71,19 @@ export async function maybeTick(db, now = Date.now(), intervalMs = TICK_INTERVAL
         if(sellQty>0){remainingShares-=sellQty;reservedShares+=sellQty;sellLevels.push({price:sell,qty:sellQty});}
       }
       // In-place requote：沿用既有委託 id（保住時間優先），不足才補新單，多的撤掉。
-      const existing=(await db.prepare("SELECT id,side FROM orders WHERE account_id=? AND symbol=? AND status IN ('OPEN','PARTIAL') ORDER BY id").bind(BOT,stock.symbol).all()).results;
-      const bySide={BUY:existing.filter(o=>o.side==='BUY'),SELL:existing.filter(o=>o.side==='SELL')};
+      const existing=(await db.prepare("SELECT id,side,status,filled_shares FROM orders WHERE account_id=? AND symbol=? AND status IN ('OPEN','PARTIAL') ORDER BY id").bind(BOT,stock.symbol).all()).results;
+      // 只有全新未成交的 OPEN 單可以 in-place 更新（保住 id 與時間優先）；
+      // PARTIAL 單撤銷後補新單，避免 filled_shares 被重設造成非法狀態。
+      const bySide={BUY:[],SELL:[]};
+      for(const o of existing){
+        if(o.status==='OPEN'&&Number(o.filled_shares)===0)bySide[o.side].push(o);
+        else prepared.push(db.prepare("UPDATE orders SET status='CANCELLED' WHERE id=?").bind(o.id));
+      }
       for(const side of ['BUY','SELL']){
         const levels=side==='BUY'?buyLevels:sellLevels, rows=bySide[side];
         for(let i=0;i<Math.max(levels.length,rows.length);i++){
           const level=levels[i], row=rows[i];
-          if(level&&row)prepared.push(db.prepare('UPDATE orders SET price=?,shares=?,filled_shares=0 WHERE id=?').bind(level.price,level.qty,row.id));
+          if(level&&row)prepared.push(db.prepare("UPDATE orders SET price=?,shares=? WHERE id=? AND status='OPEN'").bind(level.price,level.qty,row.id));
           else if(level)prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,? ,?,'LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,side,level.price,level.qty));
           else if(row)prepared.push(db.prepare("UPDATE orders SET status='CANCELLED' WHERE id=?").bind(row.id));
         }

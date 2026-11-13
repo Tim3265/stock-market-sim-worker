@@ -253,12 +253,16 @@ async function login(){
 $('#btn-play').onclick=login;
 $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 
+function tick(){if(!document.hidden)poll();else timer=setTimeout(tick,1000);}
 async function poll(){
-  state=await api('/api/live?symbol='+selected);
-  render();
-  timer=setTimeout(()=>{if(!document.hidden)poll();},(state&&state.pollMs)||5000);
+  try{
+    state=await api('/api/live?symbol='+selected);
+    render();
+  }catch(e){/* 單次失敗不讓輪詢鏈斷掉 */}
+  timer=setTimeout(tick,(state&&state.pollMs)||5000);
 }
 
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(timer);poll();}});
 function start(){
   $('#btn-logout').onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.reload();};
   $('#btn-recharge').onclick=async()=>{await api('/api/account/recharge',{method:'POST'});poll();};

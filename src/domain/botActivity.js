@@ -17,7 +17,7 @@ export async function runBotActivity(db){
  if(!stock)return;
  if(tick > 2 && tick % 4 === 3){
   const noiseSymbol = symbols[tick % symbols.length];
-  const noiseSide = (tick % 4 < 2) ? 'BUY' : 'SELL';
+  const noiseSide = (tick % 8 < 4) ? 'BUY' : 'SELL';
   const noiseStock = await db.prepare('SELECT price FROM stocks WHERE symbol=?').bind(noiseSymbol).first();
   if(noiseStock){
    const noiseQty = (['YZU','YOUJIAN'].includes(noiseSymbol) ? 35 : 55) + (tick % 25);
