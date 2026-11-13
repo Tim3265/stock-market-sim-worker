@@ -27,10 +27,10 @@ describe('Sprint 2: 市價單及造市商',()=>{
  });
  it('市場活躍時機器人偶爾真實成交，並發請求不重複執行',async()=>{
   await get('/api/stocks');
-  await env.DB.prepare('UPDATE market_state SET tick_count=2,last_tick_at=? WHERE id=1').bind(Date.now()).run();
+  await env.DB.prepare('UPDATE market_state SET tick_count=6,last_tick_at=? WHERE id=1').bind(Date.now()).run();
   const result=await Promise.all(Array.from({length:5},()=>get('/api/stocks')));
   expect(result.every(r=>r.status===200)).toBe(true);
-  expect(await env.DB.prepare("SELECT COUNT(*) n FROM orders WHERE request_id='bot-activity-tick-2'").first()).toEqual({n:1});
+  expect(await env.DB.prepare("SELECT COUNT(*) n FROM orders WHERE request_id='bot-activity-tick-6'").first()).toEqual({n:1});
   expect((await env.DB.prepare("SELECT COUNT(*) n FROM order_fills WHERE buyer_id=1000001 OR seller_id=1000001").first()).n).toBe(1);
  });
  it('連續上漲與恐慌狀態觸發各自機器人下單',async()=>{
@@ -225,7 +225,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await get('/api/orderbook?symbol=YZU');
   await env.DB.prepare('UPDATE accounts SET cash=0,frozen_cash=0 WHERE id=1000000').run();
   await env.DB.prepare("UPDATE holdings SET shares=0,frozen_shares=0 WHERE account_id=1000000 AND symbol='YZU'").run();
-  await env.DB.prepare('UPDATE market_state SET tick_count=3,last_tick_at=0').run();
+  await env.DB.prepare('UPDATE market_state SET tick_count=4,last_tick_at=0').run();
   const result=await get('/api/orderbook?symbol=YZU');
   expect(result.status).toBe(200);expect(result.body.bids).toEqual([]);expect(result.body.asks).toEqual([]);
  });

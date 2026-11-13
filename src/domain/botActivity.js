@@ -24,7 +24,7 @@ export async function runBotActivity(db){
    await submit(1000001, noiseSide, noiseQty, 'MARKET', null, 'retail', noiseSymbol);
   }
  }
- if(tick%2===0)await submit(1000001,side,1);
+ if(tick%3===0)await submit(1000001,side,1);
  if(tick%10===0){
   const whaleSym = symbols[(tick*2)%symbols.length];
   const whaleSide = (tick%10<5)?'BUY':'SELL';

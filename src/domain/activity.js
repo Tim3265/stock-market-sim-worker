@@ -1,6 +1,6 @@
-// 依最近 60 秒的請求數決定 tick 間隔與建議 poll 頻率。
-// D1 免費額度（每日 10 萬 rows寫入）是整個帳號共享的硬上限，
-// 人少時放慢市場節奏，避免一個人玩一整天就把額度燒光。
+// 依最近 60 秒的請求數決定建議 poll 頻率（省讀取額度）。
+// tick 固定 15 秒不變；D1 免費額度（每日 10 萬 rows寫入）是整個帳號共享的硬上限，
+// 但市場是 lazy tick：沒人請求就完全不推進、不燒寫入額度。
 const WINDOW_MS = 60000;
 const stamps = [];
 
@@ -17,12 +17,9 @@ export function requestsPerMin(now = Date.now()) {
   return n;
 }
 
-// 無請求資料時維持 15 秒預設；有資料時依人數分級（規格允許「至少 15 秒才動一次」）。
-export function tickIntervalMs(now = Date.now()) {
-  const rpm = requestsPerMin(now);
-  if (rpm === 0) return 15000;
-  if (rpm <= 20) return 60000;
-  if (rpm <= 90) return 30000;
+// 效能不變：只要有玩家在看盤，tick 固定維持 15 秒。
+// 市場本來就是 lazy tick —— 沒人發請求就完全不推進、不燒寫入額度。
+export function tickIntervalMs() {
   return 15000;
 }
 
