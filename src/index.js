@@ -8,7 +8,7 @@ import * as queries from "./db/queries.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
 import { PAGE_HTML } from "./page.js";
-import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed, BROKER } from './domain/orders.js';
+import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed } from './domain/orders.js';
 import { maybeTick } from './domain/marketMaker.js';
 import * as auth from './domain/auth.js';
 import { runBotActivity } from './domain/botActivity.js';
@@ -140,7 +140,6 @@ async function route(request, env) {
       fills,
       events,
       index,
-      broker: BROKER,
       histories,
       username: session ? session.username : null
     });
@@ -322,8 +321,9 @@ async function route(request, env) {
 
 // ---------- GET /api/stocks ----------
 async function listStocks(env) {
-  let stocks = await queries.listStocks(env.DB);
-  if(await isUpgraded(env.DB)) stocks=(await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
+  const stocks = await isUpgraded(env.DB)
+    ? (await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results
+    : await queries.listStocks(env.DB);
   return ok({ stocks });
 }
 
@@ -334,8 +334,8 @@ async function getAccount(env, accountId, upgraded) {
   const result = await snapshot(env.DB, accountId);
   if (!result.ok) return fail(result.code, result.message);
   if (upgraded) {
-    const accRow = await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=?').bind(accountId).first();
-    if (accRow) { result.account.frozen_cash = accRow.frozen_cash; result.account.available_cash = Math.round((result.account.cash - accRow.frozen_cash) * 100) / 100; }
+    result.account.frozen_cash = result.account.frozenCash;
+    result.account.available_cash = result.account.availableCash;
     const frozen=(await env.DB.prepare('SELECT symbol,frozen_shares FROM holdings WHERE account_id=?').bind(accountId).all()).results;
     const bySymbol=Object.fromEntries(frozen.map(row=>[row.symbol,row.frozen_shares]));
     for(const holding of result.holdings)holding.frozen_shares=bySymbol[holding.symbol]||0;
