@@ -88,6 +88,15 @@ export const PAGE_HTML = `<!DOCTYPE html>
   .stock-card .price{font-size:18px;}
   .stock-card .chg.up{color:var(--red);} .stock-card .chg.down{color:var(--green);}
   .stock-card svg{width:100%; height:48px; display:block; margin-top:8px;}
+  .stock-head{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+  .stock-head .nick{font-size:15px; font-weight:bold;}
+  .stock-head .sym{margin-left:auto; color:var(--blue); font-size:10px;}
+  .px-icon{display:inline-flex;}
+  .px-icon svg{display:block; image-rendering:pixelated; shape-rendering:crispEdges;}
+  #chart-modal{position:fixed; inset:0; background:rgba(4,6,14,.8); display:flex; align-items:center; justify-content:center; z-index:60;}
+  #chart-modal .panel{width:min(880px,94vw); max-height:92vh; overflow:auto; padding:16px;}
+  #k-canvas{width:100%; height:380px; display:block; background:#0b0e1a; border:2px solid var(--line); cursor:crosshair;}
+  #k-fills-table{width:100%;}
 
   /* 個股面板 */
   #stock-detail{padding:16px; display:flex; flex-direction:column; gap:14px;}
@@ -126,7 +135,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
 
 <!-- 登入 -->
 <div id="login-screen">
-  <h1>股市模擬大戶</h1>
+  <h1><span id="login-coin" class="px-icon" style="vertical-align:-4px"></span> 股市模擬大戶</h1>
   <div class="sub">PIXEL STOCK TRADER · 六檔虛擬市場 · 大樹證券 2.8 折</div>
   <div id="login-box" class="panel">
     <input id="nickname" maxlength="12" placeholder="輸入暱稱（可留空）">
@@ -140,7 +149,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
   <header>
     <span class="logo">▚▞ 股市模擬大戶</span>
     <span id="index-chip">大盤指數 <b id="index-val">----</b> <span id="index-chg"></span></span>
-    <span id="cash-chip">現金 $<span id="cash-val">-</span> <span id="frozen-val" style="color:var(--dim); font-size:11px"></span></span>
+    <span id="cash-chip"><span id="cash-coin" class="px-icon"></span>現金 $<span id="cash-val">-</span> <span id="frozen-val" style="color:var(--dim); font-size:11px"></span></span>
     <span class="spacer"></span>
     <span id="user-chip" style="color:var(--dim)"></span>
     <button class="ghost" id="btn-recharge">重設資金</button>
@@ -170,6 +179,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     <section id="tab-market">
       <details class="panel" style="padding:8px 12px; margin-bottom:10px; font-size:13px"><summary style="cursor:pointer; color:var(--dim)">市場事件（進階）</summary><div id="events-bar" style="margin-top:8px"></div></details>
       <div id="stock-grid"></div>
+      <div style="color:var(--dim); font-size:11px; margin:8px 2px">單擊股票卡選擇下單 · 雙擊開 K 線圖（十字線＋歷史成交）</div>
       <div id="stock-detail" class="panel hidden">
         <h2 id="detail-title"></h2>
         <svg id="detail-chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
@@ -223,6 +233,22 @@ export const PAGE_HTML = `<!DOCTYPE html>
 
     <div id="broker-note" class="panel" style="padding:10px 14px">手續費：大樹證券 0.1425% 打 2.8 折 = 0.0399%（向上取到 0.01）｜漲跌停 ±10%｜市價單吃不到剩餘即取消</div>
   </main>
+  <div id="chart-modal" class="hidden">
+    <div class="panel">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap">
+        <span id="k-icon" class="px-icon"></span>
+        <b id="k-title" style="font-size:16px"></b>
+        <span style="color:var(--dim); font-size:11px">雙擊股票卡開 K 線圖 · 移動游標看十字線</span>
+        <span style="flex:1"></span>
+        <button class="ghost" id="k-close">關閉 ✕</button>
+      </div>
+      <canvas id="k-canvas" width="840" height="380"></canvas>
+      <div id="k-info" style="color:var(--dim); font-size:12px; margin:6px 0 10px; min-height:16px">尚無資料</div>
+      <details open><summary style="cursor:pointer; color:var(--dim); font-size:13px; margin-bottom:8px">歷史成交紀錄（近 6 小時）</summary>
+        <table id="k-fills-table"><thead><tr><th>時間</th><th>股數</th><th>價格</th><th>金額</th><th>買方</th><th>賣方</th></tr></thead><tbody></tbody></table>
+      </details>
+    </div>
+  </div>
   <footer>股市模擬大戶 · Cloudflare Workers + D1 · 有人瀏覽時市場每 15 秒推進一輪</footer>
 </div>
 
@@ -257,6 +283,105 @@ $('#btn-play').onclick=login;
 $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 
 function tick(){if(!document.hidden)poll();else timer=setTimeout(tick,1000);}
+// ---- 像素風 icon：16x16 字格，每個字元對應一種顏色 ----'
+const PX_PAL={K:'#ffd23f',k:'#c8951a',D:'#2b3a67',c:'#4db2ff',B:'#123a6d',b:'#1e5aa8',r:'#ff5470',R:'#c22434',G:'#3ddc78',g:'#9aa7bd',w:'#e8ecf5'};
+const PX_ICONS={
+ '2330':['................','..g........g....','..g........g....','..g..DDDDDD..g..','..g..DccccD..g..','..g..DcKKcD..g..','..g..DccccD..g..','..g..DDDDDD..g..','..g........g....','..g........g....','................','................','................','................','................','................'],
+ '2317':['BBBBBBBBBBBBBBBB','BBBBBBBBBBBBBBBB','BrrrBrrrBrrrBrrB','BBrrrBBrrrBBrrrB','BBBBBBBBBBBBBBBB','BrrrBrrrBrrrBrrB','BBrrrBBrrrBBrrrB','BBBBBBBBBBBBBBBB','BrrrBrrrBrrrBrrB','BBrrrBBrrrBBrrrB','BBBBBBBBBBBBBBBB','BrrrBrrrBrrrBrrB','BBBBBBBBBBBBBBBB','BBrrrBBrrrBBrrrB','BBBBBBBBBBBBBBBB','BBBBBBBBBBBBBBBB'],
+ '2454':['................','......GGGG......','.....GGG........','....GGG.........','...GGGGGG.......','....GGGGG.......','.....GGGG.......','......GGG.......','.....GGG........','....GGG.........','...GGG..........','..GGG...........','..GG............','................','................','................'],
+ '3711':['................','.....KKKK.......','....KkkkkK......','....KkkkkK......','.....KKKK.......','................','..bb..bb..bb....','.bbbbbbbbbbbbb..','..bb..bb..bb....','.bbbbbbbbbbbbb..','..bb..bb..bb....','................','................','................','................','................'],
+ 'YZU':['................','....kkkkkk......','..kkKKKKKKkk....','.kKKKKKKKKKKk...','.kKKkkKKkkKKk...','.kKkKkkkkKkKk...','.kKkKkkkkKkKk...','.kKKkkKKkkKKk...','.kKKKKKKKKKKk...','..kkKKKKKKkk....','....kkkkkk......','................','................','................','................','................'],
+ 'YOUJIAN':['................','.....gggg.......','....gggggg......','....gwgggg......','....gggggg......','....ggwwgg......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....gggggg......','.....gggg.......','................','................','................'],
+ COIN:['................','....kkkkkk......','..kkKKKKKKkk....','.kKKkkKKKKKKk...','.kKkKkkKKKkKk...','.kKkKKKKKKkKk...','.kKkKkkKKKkKk...','.kKKkkKKKKKKk...','..kkKKKKKKkk....','....kkkkkk......','................','................','................','................','................','................']
+};
+function pxIcon(name,size){
+  const grid=(PX_ICONS[name]||PX_ICONS.COIN).map(r=>r.padEnd(16,'.'));
+  const cell=size/16; let rects='';
+  grid.forEach((row,y)=>{for(let x=0;x<16;x++){const col=PX_PAL[row[x]];if(col)rects+='<rect x="'+(x*cell).toFixed(2)+'" y="'+(y*cell).toFixed(2)+'" width="'+cell.toFixed(2)+'" height="'+cell.toFixed(2)+'" fill="'+col+'"/>';}});
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" shape-rendering="crispEdges">'+rects+'</svg>';
+}
+
+// ---- K 線圖（雙擊股票卡開啟）：每根 K = 一個 tick，紅漲綠跌 ----
+let kCandles=[], kHover=-1, kMouseY=null, kLayout=null;
+function buildCandles(history,fills){
+  const cs=history.map((p,i)=>({t:p.created_at,open:i?Number(history[i-1].price):Number(p.price),close:Number(p.price),high:0,low:0}));
+  cs.forEach(c=>{c.high=Math.max(c.open,c.close);c.low=Math.min(c.open,c.close);});
+  for(const f of fills||[]){let idx=-1;for(let i=0;i<cs.length;i++){if(cs[i].t<=f.created_at)idx=i;else break;}if(idx>=0){cs[idx].high=Math.max(cs[idx].high,Number(f.price));cs[idx].low=Math.min(cs[idx].low,Number(f.price));}}
+  return cs;
+}
+let kReq=0;
+async function openChart(sym){
+  const req=++kReq;
+  selected=sym; render();
+  const cv0=$('#k-canvas'); const dpr0=window.devicePixelRatio||1; cv0.width=840*dpr0; cv0.height=380*dpr0;
+  const s=(state.stocks||[]).find(x=>x.symbol===sym);
+  $('#k-icon').innerHTML=pxIcon(sym,28);
+  $('#k-title').textContent=((s&&s.nickname)||sym)+' '+sym+' K 線';
+  $('#chart-modal').classList.remove('hidden');
+  $('#k-info').textContent='載入中…';
+  const h=await api('/api/history?symbol='+encodeURIComponent(sym));
+  if(req!==kReq)return;
+  if(!h||!h.ok){$('#k-info').textContent='載入失敗';return;}
+  kCandles=buildCandles(h.history,h.fills||[]); kHover=-1; kMouseY=null;
+  $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+f.created_at+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+f.buyer_name+'</td><td>'+f.seller_name+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
+  drawChart();
+}
+function closeChart(){$('#chart-modal').classList.add('hidden');}
+function drawChart(){
+  const cv=$('#k-canvas'); const dpr=window.devicePixelRatio||1;
+  const W=840,H=380;
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  const cw=W,ch=H; ctx.clearRect(0,0,cw,ch);
+  ctx.fillStyle='#0b0e1a'; ctx.fillRect(0,0,cw,ch);
+  const L=8,R=58,T=12,B=22,pw=cw-L-R,ph=ch-T-B;
+  kLayout={L,T,step:0,pw,ph,min:0,max:1,cw,ch};
+  const n=kCandles.length;
+  if(!n){$('#k-info').textContent='近 6 小時無價格資料';return;}
+  let min=Infinity,max=-Infinity;
+  kCandles.forEach(c=>{min=Math.min(min,c.low);max=Math.max(max,c.high);});
+  const pad=(max-min)*0.08||1; min-=pad; max+=pad;
+  const y=v=>T+(1-(v-min)/(max-min))*ph;
+  const step=pw/n, bw=Math.min(28,Math.max(2,step*0.62));
+  kLayout={L,T,step,pw,ph,min,max,cw,ch};
+  ctx.strokeStyle='#1c2340'; ctx.fillStyle='#8a90b8'; ctx.font='10px monospace'; ctx.textAlign='left';
+  for(let i=0;i<=4;i++){const v=min+(max-min)*i/4,gy=y(v);ctx.beginPath();ctx.moveTo(L,gy);ctx.lineTo(L+pw,gy);ctx.stroke();ctx.fillText('$'+fmt(v),L+pw+6,gy+3);}
+  kCandles.forEach((c,i)=>{
+    const x=L+i*step+step/2, up=c.close>=c.open, col=up?'#ff5470':'#3ddc78';
+    ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,y(c.high)); ctx.lineTo(x,y(c.low)); ctx.stroke();
+    const y1=y(Math.max(c.open,c.close)), y2=y(Math.min(c.open,c.close));
+    ctx.fillRect(x-bw/2,Math.min(y1,y2),bw,Math.max(1,Math.abs(y2-y1)));
+  });
+  ctx.strokeStyle='#ffd23f'; ctx.lineWidth=1.5; ctx.beginPath();
+  let started=false;
+  kCandles.forEach((c,i)=>{if(i<4)return;const ma=kCandles.slice(i-4,i+1).reduce((s,x)=>s+x.close,0)/5;const x=L+i*step+step/2;if(!started){ctx.moveTo(x,y(ma));started=true;}else ctx.lineTo(x,y(ma));});
+  ctx.stroke();
+  const last=kCandles[n-1].close, ly=y(last);
+  ctx.strokeStyle='rgba(232,236,245,.5)'; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(L,ly); ctx.lineTo(L+pw,ly); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='#e8ecf5'; ctx.fillText('$'+fmt(last),L+pw+6,ly+3);
+  ctx.fillStyle='#8a90b8'; ctx.textAlign='center';
+  const every=Math.max(1,Math.floor(n/8));
+  for(let i=0;i<n;i+=every){ctx.fillText(kCandles[i].t.slice(11,16),L+i*step+step/2,ch-6);}
+  if(kHover>=0&&kHover<n){
+    const c=kCandles[kHover], x=L+kHover*step+step/2;
+    ctx.strokeStyle='rgba(232,236,245,.35)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,T); ctx.lineTo(x,T+ph); ctx.stroke();
+    if(kMouseY!=null){ctx.beginPath(); ctx.moveTo(L,kMouseY); ctx.lineTo(L+pw,kMouseY); ctx.stroke();
+      const pv=min+(1-(kMouseY-T)/ph)*(max-min); ctx.fillStyle='#e8ecf5'; ctx.textAlign='left'; ctx.fillText('$'+fmt(pv),L+pw+6,kMouseY+3);}
+    $('#k-info').innerHTML=c.t+'　開 <b>$'+fmt(c.open)+'</b>　高 <b>$'+fmt(c.high)+'</b>　低 <b>$'+fmt(c.low)+'</b>　收 <b style="color:'+(c.close>=c.open?'#ff5470':'#3ddc78')+'">$'+fmt(c.close)+'</b>';
+  } else {
+    $('#k-info').textContent='共 '+n+' 根 K 棒（每根 = 一個 tick，15 秒）｜ 移動游標看十字線';
+  }
+}
+function bindChart(){
+  const cv=$('#k-canvas');
+  cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect(); if(!kLayout)return; const x=(e.clientX-r.left)*(840/r.width), yy=(e.clientY-r.top)*(380/r.height); const i=Math.floor((x-kLayout.L)/kLayout.step); kHover=(i>=0&&i<kCandles.length)?i:-1; kMouseY=Math.max(kLayout.T,Math.min(kLayout.T+kLayout.ph,yy)); drawChart();});
+  cv.addEventListener('mouseleave',()=>{kHover=-1;kMouseY=null;drawChart();});
+  $('#k-close').onclick=closeChart;
+  $('#chart-modal').addEventListener('click',e=>{if(e.target.id==='chart-modal')closeChart();});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeChart();});
+}
+
 async function poll(){
   try{
     state=await api('/api/live?symbol='+selected+(tab==='market'?'&light=1':''));
@@ -266,7 +391,10 @@ async function poll(){
 }
 
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(timer);poll();}});
-function start(){
+let started=false;
+function start(){ if(started)return; started=true;
+  $('#cash-coin').innerHTML=pxIcon('COIN',16);
+  bindChart();
   $('#btn-logout').onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.reload();};
   $('#btn-recharge').onclick=async()=>{await api('/api/account/recharge',{method:'POST'});poll();};
   $('#btn-buy').onclick=()=>place('BUY');
@@ -316,15 +444,14 @@ function renderMarket(){
     const chg=pct(s.price,s.ref_price);
     const cls=chg>=0?'up':'down';
     const color=chg>=0?'var(--red)':'var(--green)';
-    return '<div class="stock-card panel" data-sym="'+s.symbol+'">'
-      +'<div class="sym">'+s.symbol+'</div>'
-      +'<div class="name">'+s.name+(s.nickname?' · '+s.nickname:'')+'</div>'
+    return '<div class="stock-card panel" data-sym="'+s.symbol+'" title="單擊選擇下單 · 雙擊開 K 線圖">'
+      +'<div class="stock-head">'+pxIcon(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
       +'<div class="price">$'+fmt(s.price)+'</div>'
       +'<div class="chg '+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</div>'
       +sparkline(hist,200,48,color)
       +'</div>';
   }).join('');
-  grid.querySelectorAll('.stock-card').forEach(c=>c.onclick=()=>{selected=c.dataset.sym;render();poll();}); // 先即時渲染，再背景更新
+  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);}); // 單擊選擇下單，雙擊開 K 線圖
   renderDetail();
 }
 
@@ -337,8 +464,8 @@ function renderDetail(){
   const chg=pct(s.price,s.ref_price);
   const color=chg>=0?'var(--red)':'var(--green)';
   // 只更新標題、走勢圖與盤口；下單表單維持不動，避免輪詢時搶走輸入框焦點
-  $('#detail-title').innerHTML=s.name+' '+s.symbol+' $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
-  $('#ord-sym').textContent='下單：'+s.symbol+' '+s.name;
+  $('#detail-title').innerHTML=(s.nickname||s.name)+' '+s.symbol+' $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
+  $('#ord-sym').textContent='下單：'+s.symbol+' '+(s.nickname||s.name);
   // 走勢圖加上價格單位：最高/最低標籤 + 現價虛線標籤
   $('#detail-chart').innerHTML=hist.length>1?(()=>{const vals=hist.map(p=>Number(p.price));const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
     const pts=vals.map((v,i)=>(i*(540/(vals.length-1))).toFixed(1)+','+(170-((v-min)/span)*160).toFixed(1)).join(' ');
@@ -395,7 +522,7 @@ function renderPortfolio(){
     ['總資產','$'+fmt((a.cash||0)+mv)]
   ].map(p=>'<div><div style="color:var(--dim); font-size:11px">'+p[0]+'</div><div style="color:var(--green); font-size:16px">'+p[1]+'</div></div>').join(''):'請先登入';
   const hb=$('#holdings-table tbody');
-  hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+h.symbol+' '+h.name+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>$'+fmt(h.market_value)+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--dim)">無持股</td></tr>';
+  hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+h.symbol+' '+(h.nickname||h.name)+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>$'+fmt(h.market_value)+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--dim)">無持股</td></tr>';
   const tb=$('#trades-table tbody');
   tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+t.created_at+'</td><td>'+t.symbol+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無交易紀錄</td></tr>';
 }
@@ -428,6 +555,7 @@ async function renderBots(){
 }
 
 // 瀏覽器記得登入狀態（session cookie 有效）時，重新整理直接進入同一帳號
+$('#login-coin').innerHTML=pxIcon('COIN',22);
 api('/api/auth/session').then(r=>{if(r.ok){$('#login-screen').classList.add('hidden');$('#app').classList.remove('hidden');start();}});
 </script>
 </body>

@@ -410,7 +410,7 @@ BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_SHARES'); END;
 | `idx_price_history_symbol(symbol, id DESC)` | 走勢圖 |
 | `idx_price_history_symbol_time(symbol, created_at)` | 走勢圖時間範圍查詢 |
 | `idx_orders_active(symbol, side, price, id)` WHERE status IN ('OPEN','PARTIAL') AND type='LIMIT' | 部分索引：只索引活躍限價委託 |
-| `idx_fills_buyer(buyer_id, id DESC)` / `idx_fills_seller(seller_id, id DESC)` / `idx_fills_symbol(symbol, id DESC)` | 成交帳本查詢（實驗用） |
+| `idx_fills_buyer(buyer_id, id DESC)` / `idx_fills_seller(seller_id, id DESC)` / `idx_fills_symbol(symbol, id DESC)` | 成交帳本查詢；`idx_fills_symbol` 供 K 線圖歷史成交（migration 0012） |
 | `idx_player_sessions_expiry(expires_at)` | 工作階段過期清理 |
 （`holdings` 以 `(account_id, symbol)` 為複合主鍵，帳戶查詢直接走 PK，不另建索引）
 
@@ -523,7 +523,7 @@ UPDATE market_state
 | GET | `/api/account` | 目前登入帳戶、持股、資產（帳戶由 session 決定，不接受 id 參數） |
 | GET | `/api/trades?symbol=&side=&from=&to=&limit=20&offset=0` | 目前帳戶的成交（篩選＋分頁） |
 | GET | `/api/orders?status=OPEN` | 目前帳戶的委託 |
-| GET | `/api/history?symbol=2330` | 走勢（最後成交價，固定最近 6 小時、最多 500 筆） |
+| GET | `/api/history?symbol=2330` | 走勢（最近 6 小時、最多 500 筆價格歷史）＋該股近 6 小時成交紀錄 `fills`（最新 20 筆） |
 | POST | `/api/orders` | 下單（市價或限價） |
 | DELETE | `/api/orders/:id` | 取消委託 |
 | POST | `/api/trade` | 已停用：未登入回 401，登入後固定回 400，請改用 `/api/orders` |
