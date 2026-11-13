@@ -12,5 +12,6 @@ wrangler.deploy.json
 wrangler.qa.json
 wrangler.temp.json
 .local-benchmark/
+.fix_*.cjs
 .DS_Store
 Thumbs.db

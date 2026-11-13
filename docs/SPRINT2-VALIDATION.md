@@ -1,6 +1,6 @@
 # Sprint 2 驗證紀錄
 
-> 歷史紀錄：以下為 Sprint 2 當時的驗證內容，現況以 README.md 與 SPEC.md 為準（現為 8 個測試檔、86 項通過，登入／訪客機制已實作）。
+> 歷史紀錄：以下為 Sprint 2 當時的驗證內容，現況以 README.md 與 SPEC.md 為準（現為 8 個測試檔、87 項通過，登入／訪客機制已實作）。
 
 使用 Workers 測試執行環境、Miniflare D1 及本機 Wrangler 的隔離資料庫；未連線或修改雲端資料庫。
 

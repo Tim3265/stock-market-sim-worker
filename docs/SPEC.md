@@ -306,6 +306,7 @@ accounts 1 ──< holdings >── 1 stocks
     │                           │
     ├──< orders >───────────────┤
     │        │                  │
+    │        ├──< order_fills >──┤ (maker/taker/buyer/seller，撮合唯一帳本)
     │        └──< trades >──────┤
     │                           │
     └──< bot_state >────────────┤
@@ -366,7 +367,7 @@ SELECT ... FROM trades WHERE account_id = ? ORDER BY id DESC LIMIT ? OFFSET ?
 - `type IN ('MARKET','LIMIT')`
 - `status IN ('OPEN','PARTIAL','FILLED','CANCELLED')`
 - CHECK：`(type='LIMIT' AND price IS NOT NULL AND price > 0) OR type='MARKET'`（市價單 price 允許為 NULL）
-- 所有 `account_id`、`symbol`、`order_id`、`maker_order_id`、`taker_order_id`、`buyer_id`、`seller_id` 都有 FK
+- 所有 `account_id`、`symbol`、`maker_order_id`、`taker_order_id`、`buyer_id`、`seller_id` 都有 FK
 
 **Trigger（資料庫層的最後防線）**
 
@@ -670,7 +671,7 @@ snapshot(db, accountId)
 | 指數歷史 | 1 | 720 | 720 |
 | 合計 | | | **52,560 列／3 小時** |
 
-> 批次上限檢查：D1 交易上限 1000 句；最壞情況（50 個掛單全成交）約 503 句，低於上限，單一 batch 原子性成立。
+> 批次上限檢查：D1 交易上限 1000 句；最壞情況（50 個掛單全成交）約 555 句（3 基礎 + 每筆成交 11 句 × 50 + 凍結與哨兵清理），低於上限，單一 batch 原子性成立。
 
 免費額度 10 萬列／日，仍在安全範圍。
 
