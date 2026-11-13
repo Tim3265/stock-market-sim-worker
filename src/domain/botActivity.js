@@ -15,9 +15,9 @@ export async function runBotActivity(db){
  }
  const stock=await db.prepare('SELECT price,fair_price FROM stocks WHERE symbol=?').bind(symbol).first();
  if(!stock)return;
- if(tick > 2 && tick % 2 === 1){
+ if(tick > 2 && tick % 4 === 3){
   const noiseSymbol = symbols[tick % symbols.length];
-  const noiseSide = (tick % 4 < 2) ? 'BUY' : 'SELL';
+  const noiseSide = (tick % 8 < 4) ? 'BUY' : 'SELL';
   const noiseStock = await db.prepare('SELECT price FROM stocks WHERE symbol=?').bind(noiseSymbol).first();
   if(noiseStock){
    const noiseQty = (['YZU','YOUJIAN'].includes(noiseSymbol) ? 35 : 55) + (tick % 25);
@@ -25,7 +25,7 @@ export async function runBotActivity(db){
   }
  }
  if(tick%2===0)await submit(1000001,side,1);
- if(tick%5===0){
+ if(tick%10===0){
   const whaleSym = symbols[(tick*2)%symbols.length];
   const whaleSide = (tick%10<5)?'BUY':'SELL';
   const whaleQty = (['YZU','YOUJIAN'].includes(whaleSym)?40:70) + (tick%20);

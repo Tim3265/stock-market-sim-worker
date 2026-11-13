@@ -12,6 +12,7 @@ import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed } from '.
 import { maybeTick } from './domain/marketMaker.js';
 import * as auth from './domain/auth.js';
 import { runBotActivity } from './domain/botActivity.js';
+import { noteRequest, tickIntervalMs, pollMs } from './domain/activity.js';
 import { getActiveEvents } from './domain/events.js';
 
 const DEFAULT_TRADE_LIMIT = 20;
@@ -40,7 +41,8 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   const upgraded = path.startsWith('/api/') && await isUpgraded(env.DB);
-  if (upgraded) { await maybeTick(env.DB); await matchCrossed(env.DB); await runBotActivity(env.DB); }
+  noteRequest();
+  if (upgraded) { await maybeTick(env.DB, Date.now(), tickIntervalMs()); await matchCrossed(env.DB); await runBotActivity(env.DB); }
   if (path.startsWith('/api/') && !['GET','HEAD'].includes(request.method)) {
     const origin=request.headers.get('Origin');
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
@@ -120,13 +122,14 @@ async function route(request, env) {
       JOIN stocks s ON s.symbol = f.symbol
       JOIN accounts b ON b.id = f.buyer_id
       JOIN accounts se ON se.id = f.seller_id
-      ORDER BY f.id DESC LIMIT 60
+      ORDER BY f.id DESC LIMIT 30
     `).all()).results : [];
     const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
-    const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 100").bind(sym)) : [];
+    const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 40").bind(sym)) : [];
     const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
     const index = upgraded ? await computeIndex(env.DB) : null;
+    const indexHistory = upgraded ? (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 120").all()).results.reverse() : [];
     const events = getActiveEvents(state?.tick_count || 0);
     const histories = upgraded ? Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()])) : {};
     return ok({
@@ -140,6 +143,8 @@ async function route(request, env) {
       fills,
       events,
       index,
+      indexHistory,
+      pollMs: pollMs(),
       histories,
       username: session ? session.username : null
     });
@@ -147,7 +152,7 @@ async function route(request, env) {
   if (path === '/api/index' && request.method === 'GET') {
 
     const index = await computeIndex(env.DB);
-    const history = (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").all()).results.reverse();
+    const history = (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 120").all()).results.reverse();
     return ok({ index, history });
   }
   if (path === '/api/events' && request.method === 'GET') {
@@ -163,7 +168,7 @@ async function route(request, env) {
       JOIN stocks s ON s.symbol = f.symbol
       JOIN accounts b ON b.id = f.buyer_id
       JOIN accounts se ON se.id = f.seller_id
-      ORDER BY f.id DESC LIMIT 60
+      ORDER BY f.id DESC LIMIT 30
     `).all()).results : [];
     return ok({ fills });
   }
@@ -177,7 +182,7 @@ async function route(request, env) {
     if (upgraded) {
       // 手動 tick 強制推進一輪（用未來時間戳繞過 15 秒間隔），結束後把時鐘拉回現在。
       const state = await env.DB.prepare('SELECT last_tick_at FROM market_state WHERE id=1').first();
-      await maybeTick(env.DB, Math.max(Date.now(), (state?.last_tick_at || 0) + 15000));
+      await maybeTick(env.DB, Math.max(Date.now(), (state?.last_tick_at || 0) + 15000), 0);
       await env.DB.prepare('UPDATE market_state SET last_tick_at=? WHERE id=1').bind(Date.now()).run();
       await matchCrossed(env.DB);
       await runBotActivity(env.DB);
@@ -271,7 +276,7 @@ async function route(request, env) {
     let input;try{input=await request.json();}catch{return fail('INVALID_INPUT','請求內容必須是 JSON');}
     const ticks=Math.min(Math.max(Math.trunc(Number(input.ticks??1)),1),60);
     for(let i=0;i<ticks;i++){
-      await maybeTick(env.DB,Date.now()+i*15000);
+      await maybeTick(env.DB,Date.now()+i*15000,0);
       await matchCrossed(env.DB);
       await runBotActivity(env.DB);
     }
