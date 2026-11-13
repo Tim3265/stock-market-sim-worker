@@ -66,11 +66,11 @@
 
 ```
 accounts
-  ├─ id=1  玩家            is_bot = 0
-  ├─ id=2  造市商 MM       is_bot = 1  bot_kind = 'MM'
-  ├─ id=3  動能派          is_bot = 1  bot_kind = 'MOMENTUM'
-  ├─ id=4  價值派          is_bot = 1  bot_kind = 'VALUE'
-  └─ id=5  恐慌賣壓        is_bot = 1  bot_kind = 'PANIC'
+  ├─ id=10000000+  玩家（隨機配發）  is_bot = 0
+  ├─ id=1000000  造市商 MM       is_bot = 1  bot_kind = 'MM'
+  ├─ id=1000001  動能派          is_bot = 1  bot_kind = 'MOMENTUM'
+  ├─ id=1000002  價值派          is_bot = 1  bot_kind = 'VALUE'
+  └─ id=1000003  恐慌賣壓        is_bot = 1  bot_kind = 'PANIC'
 ```
 
 Sprint 2 造市商以一個 D1 batch 建立限價報價並凍結資源；玩家透過市價委託吃單。成交均經相同的撮合與交割路徑。其他機器人的一般下單路徑留至 Sprint 4。
@@ -380,6 +380,13 @@ WHEN NEW.side = 'BUY'
 BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 ```
 
+```sql
+CREATE TRIGGER trg_trade_sell_guard BEFORE INSERT ON trades
+WHEN NEW.side = 'SELL'
+ AND COALESCE((SELECT shares FROM holdings WHERE account_id = NEW.account_id AND symbol = NEW.symbol), 0) < NEW.shares
+BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_SHARES'); END;
+```
+
 > 應用層先檢查是為了給友善訊息；Trigger 是最後一道防線。
 > **即使應用層有競態，資料庫也不會出現負現金或超賣。**
 
@@ -595,24 +602,22 @@ src/
 ### 11.3 介面
 
 ```js
-// trading.js
+// orders.js（trading.js 為 @deprecated 舊介面，僅測試使用）
 placeMarketOrder(db, { account_id, symbol, side, type, price, shares, request_id })
   → { ok: true, fills, filledShares, avgPrice, orderId, status }
   | { ok: false, code, message }
 
 // orderbook.js
-match(db, takerOrder)
-  → { fills: [{ price, shares, makerId }], remaining }
+matchOrders(taker, eligibleOrders)
+  → { fills: [{ orderId, accountId, price, shares }], remaining }
 
-// market.js
+// marketMaker.js
 maybeTick(db, now)
-  → { ticked: boolean, prices: [{ symbol, price }] }
-applyPriceLimits(stock, price)
-  → { ok, price } | { ok: false, code: 'PRICE_LIMIT' }
+  → boolean（是否真的推進一輪）
 
 // portfolio.js
 snapshot(db, accountId)
-  → { cash, frozenCash, availableCash, marketValue, totalAssets, profit, profitPct, holdings }
+  → { ok: true, account, holdings, summary } | { ok: false, code, message }
 ```
 
 **為什麼這樣切**
@@ -652,7 +657,7 @@ snapshot(db, accountId)
 |---|---|---|---|
 | 造市商 6 檔 × 5 單 | 30 | 720 | 21,600 |
 | 成交／歷史 | 約 12 | 720 | 8,640 |
-| 合計 | | | **約 35,000 列／日** |
+| 合計 | | | **30,240 列／日** |
 
 > 批次上限檢查：D1 交易上限 1000 句；最壞情況（50 個掛單全成交）約 503 句，低於上限，單一 batch 原子性成立。
 

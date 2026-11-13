@@ -4,13 +4,15 @@
 import { execFileSync } from 'node:child_process';
 import { rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const DIR = join(process.cwd(), '.local-benchmark');
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const DIR = join(ROOT, '.local-benchmark');
 const DB = 'benchmark';
 rmSync(DIR, { recursive: true, force: true });
 mkdirSync(DIR, { recursive: true });
 
-const WRANGLER = join(process.cwd(), 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+const WRANGLER = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const CONFIG = join(DIR, 'wrangler.benchmark.json');
 import { writeFileSync } from 'node:fs';
 writeFileSync(CONFIG, JSON.stringify({
@@ -64,7 +66,7 @@ const report = `# 索引實驗報告（10 萬筆成交資料）
 | 項目 | 無索引 | 有索引（buyer_id / seller_id） |
 |---|---|---|
 | 查詢計畫 | ${planNoIndex} | ${planWithIndex} |
-| 時間（D1 meta.duration）/ | ${noIndexMs} ms | ${withIndexMs} ms |
+| 時間（D1 meta.duration） | ${noIndexMs} ms | ${withIndexMs} ms |
 | 結果 | count=${noIndex[0]['COUNT(*)']}, sum=${noIndex[0]['SUM(amount)']} | count=${withIndex[0]['COUNT(*)']}, sum=${withIndex[0]['SUM(amount)']} |
 
 結論：無索引時為全表掃描（SCAN order_fills）；建立索引後改為 SEARCH ... USING INDEX，
