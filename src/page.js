@@ -168,6 +168,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     </div>
 
     <section id="tab-market">
+      <div id="events-bar" class="panel" style="padding:8px 12px; margin-bottom:10px; font-size:11px"></div>
       <div id="stock-grid"></div>
       <div id="stock-detail" class="panel hidden">
         <h2 id="detail-title"></h2>
@@ -295,6 +296,8 @@ function render(){
 }
 
 function renderMarket(){
+  const ev=$('#events-bar');
+  if(ev)ev.innerHTML=(state.events||[]).map(e=>'<div><b>'+e.symbol+'</b> '+e.title+' <span class="'+(String(e.impact).startsWith('-')?'down':'up')+'">'+e.impact+'</span></div>').join('')||'<span style="color:var(--dim)">目前無市場事件</span>';
   const grid=$('#stock-grid');
   grid.innerHTML=state.stocks.map(s=>{
     const hist=state.histories[s.symbol]||[];
@@ -397,7 +400,7 @@ function renderFills(){
 
 async function renderLeaderboard(){
   const r=await api('/api/leaderboard');
-  $('#lb-table tbody').innerHTML=(r.players||[]).map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+p.username+'</td><td>$'+fmt(p.total_assets)+'</td></tr>').join('');
+  $('#lb-table tbody').innerHTML=(r.players||[]).map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+p.username+(p.is_bot?' <span style="color:var(--dim)">[BOT]</span>':'')+'</td><td>$'+fmt(p.total_assets)+'</td></tr>').join('');
 }
 
 async function renderBots(){

@@ -2,6 +2,7 @@
 // Sprint 2 會在這裡加入漲跌停、衝擊、報價中心；
 // 現在只保留四捨五入與價格下限，讓其他模組可以共用。
 
+// @deprecated roundPrice/MIN_PRICE 只供單元測試使用，生產路徑以 orders.js 的 cents() 為準
 export const MIN_PRICE = 0.01;
 
 export function round2(n) {
