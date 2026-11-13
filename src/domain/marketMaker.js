@@ -27,9 +27,9 @@ export async function maybeTick(db, now = Date.now(), intervalMs = TICK_INTERVAL
   let remainingCash=Math.round(Number(maker.cash)*100);
   const date=new Date(now+8*3600000).toISOString().slice(0,10);
 
-  // 每三輪才重新報價一次：D1 rows written 是硬額度，報價改為 in-place 更新
+  // 每四輪才重新報價一次：D1 rows written 是硬額度，報價改為 in-place 更新
   // （保住 order id 與 FIFO 時間優先），大幅降低每次 tick 的寫入量。
-  const requote=Number(state.tick_count)%3===0;
+  const requote=Number(state.tick_count)%4===0;
 
   const prepared=[
     db.prepare('UPDATE market_state SET match_seq=match_seq+1,tick_count=tick_count+1,last_tick_at=? WHERE id=1 AND match_seq=? AND last_tick_at=?').bind(now,state.match_seq,state.last_tick_at),
