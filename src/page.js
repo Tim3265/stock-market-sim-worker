@@ -97,6 +97,15 @@ export const PAGE_HTML = `<!DOCTYPE html>
   #chart-modal .panel{width:min(880px,94vw); max-height:92vh; overflow:auto; padding:16px;}
   #k-canvas{width:100%; height:380px; display:block; background:#0b0e1a; border:2px solid var(--line); cursor:crosshair;}
   #k-fills-table{width:100%;}
+  .stock-card.sel{border-color:var(--gold); box-shadow:6px 6px 0 rgba(0,0,0,.45), 0 0 0 2px var(--gold);}
+  .stock-card .price{transition:color .6s;}
+  .stock-card .price.flash-up{color:var(--red);} .stock-card .price.flash-down{color:var(--green);}
+  .stock-card .mini-stats{color:var(--dim); font-size:10px; margin-top:2px;}
+  button{transition:transform .06s, box-shadow .06s, background .12s;}
+  button:active{transform:translate(0,3px); box-shadow:none !important;}
+  .ghost.active{background:var(--gold); color:#1a1a2e; box-shadow:0 var(--px) 0 #8a6d1a;}
+  #chart-modal .panel{animation:pop .14s ease-out;}
+  @keyframes pop{from{transform:scale(.96); opacity:.4} to{transform:scale(1); opacity:1}}
 
   /* 個股面板 */
   #stock-detail{padding:16px; display:flex; flex-direction:column; gap:14px;}
@@ -183,6 +192,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
       <div id="stock-detail" class="panel hidden">
         <h2 id="detail-title"></h2>
         <svg id="detail-chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+        <div id="detail-stats" style="display:flex; gap:18px; flex-wrap:wrap; margin:8px 0; font-size:12px"></div>
         <details open><summary style="cursor:pointer; color:var(--dim); font-size:13px; margin-bottom:8px">十檔委託簿（進階）</summary>
         <div class="book-wrap">
           <div class="book-col panel" style="padding:10px"><h3>賣出（十檔）</h3><div id="asks-rows"></div></div>
@@ -238,9 +248,25 @@ export const PAGE_HTML = `<!DOCTYPE html>
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap">
         <span id="k-icon" class="px-icon"></span>
         <b id="k-title" style="font-size:16px"></b>
-        <span style="color:var(--dim); font-size:11px">雙擊股票卡開 K 線圖 · 移動游標看十字線</span>
+        <span style="color:var(--dim); font-size:11px">雙擊股票卡開走勢圖 · 滾輪縮放 / 拖曳平移 / 十字線</span>
         <span style="flex:1"></span>
         <button class="ghost" id="k-close">關閉 ✕</button>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px; flex-wrap:wrap">
+        <div id="k-modes" style="display:flex; gap:4px">
+          <button class="ghost active" data-mode="line" style="padding:4px 10px; font-size:12px">折線</button>
+          <button class="ghost" data-mode="candle" style="padding:4px 10px; font-size:12px">K 線</button>
+        </div>
+        <div id="k-ranges" style="display:flex; gap:4px">
+          <button class="ghost active" data-range="all" style="padding:4px 10px; font-size:12px">全部</button>
+          <button class="ghost" data-range="4h" style="padding:4px 10px; font-size:12px">4H</button>
+          <button class="ghost" data-range="2h" style="padding:4px 10px; font-size:12px">2H</button>
+          <button class="ghost" data-range="1h" style="padding:4px 10px; font-size:12px">1H</button>
+        </div>
+        <span style="flex:1"></span>
+        <button class="ghost" id="k-zoom-out" style="padding:4px 10px; font-size:12px">－</button>
+        <button class="ghost" id="k-zoom-in" style="padding:4px 10px; font-size:12px">＋</button>
+        <button class="ghost" id="k-reset" style="padding:4px 10px; font-size:12px">重置</button>
       </div>
       <canvas id="k-canvas" width="840" height="380"></canvas>
       <div id="k-info" style="color:var(--dim); font-size:12px; margin:6px 0 10px; min-height:16px">尚無資料</div>
@@ -256,15 +282,19 @@ export const PAGE_HTML = `<!DOCTYPE html>
 const $=s=>document.querySelector(s);
 const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:2});
 const pct=(a,b)=>b?((a-b)/b*100):0;
-let state=null, selected='2330', tab='market', timer=null;
+let state=null, selected='2330', tab='market', timer=null, prevPrices={};
 
 function sparkline(points,w,h,color){
   if(!points||points.length<2)return '';
   const vals=points.map(p=>Number(p.price));
   const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
   const step=w/(vals.length-1);
-  const pts=vals.map((v,i)=>((i*step).toFixed(1))+','+((h-4-((v-min)/span)*(h-8))).toFixed(1)).join(' ');
-  return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none"><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2"/></svg>';
+  const pts=vals.map((v,i)=>((i*step).toFixed(1))+','+((h-4-((v-min)/span)*(h-8))).toFixed(1));
+  const last=pts[pts.length-1].split(',');
+  return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">'
+    +'<polygon points="0,'+(h-2)+' '+pts.join(' ')+' '+w+','+(h-2)+'" fill="'+color+'" opacity="0.15"/>'
+    +'<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2"/>'
+    +'<circle cx="'+Math.min(w-3,Number(last[0]))+'" cy="'+last[1]+'" r="3" fill="'+color+'"/></svg>';
 }
 
 async function api(path,opts){
@@ -284,13 +314,13 @@ $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 
 function tick(){if(!document.hidden)poll();else timer=setTimeout(tick,1000);}
 // ---- 像素風 icon：16x16 字格，每個字元對應一種顏色 ----'
-const PX_PAL={K:'#ffd23f',k:'#c8951a',D:'#2b3a67',c:'#4db2ff',B:'#123a6d',b:'#1e5aa8',r:'#ff5470',R:'#c22434',G:'#3ddc78',g:'#9aa7bd',w:'#e8ecf5'};
+const PX_PAL={K:'#ffd23f',k:'#c8951a',D:'#2b3a67',c:'#4db2ff',B:'#123a6d',b:'#1e5aa8',r:'#ff5470',R:'#c22434',G:'#3ddc78',g:'#9aa7bd',w:'#e8ecf5',O:'#ff9f2e',m:'#dfe6f5'};
 const PX_ICONS={
  '2330':['................','..g........g....','..g........g....','..g..DDDDDD..g..','..g..DccccD..g..','..g..DcKKcD..g..','..g..DccccD..g..','..g..DDDDDD..g..','..g........g....','..g........g....','................','................','................','................','................','................'],
- '2317':['BBBBBBBBBBBBBBBB','BBBBBBBBBBBBBBBB','BrrrBrrrBrrrBrrB','BBrrrBBrrrBBrrrB','BBBBBBBBBBBBBBBB','BrrrBrrrBrrrBrrB','BBrrrBBrrrBBrrrB','BBBBBBBBBBBBBBBB','BrrrBrrrBrrrBrrB','BBrrrBBrrrBBrrrB','BBBBBBBBBBBBBBBB','BrrrBrrrBrrrBrrB','BBBBBBBBBBBBBBBB','BBrrrBBrrrBBrrrB','BBBBBBBBBBBBBBBB','BBBBBBBBBBBBBBBB'],
+ '2317':['................','.....wwww.......','....wwwwww......','...wwwwwww......','...wwwwwwO......','...wwwww........','....wwww........','....wwg.........','....wwg.........','....gg..........','................','................','................','................','................','................'],
  '2454':['................','......GGGG......','.....GGG........','....GGG.........','...GGGGGG.......','....GGGGG.......','.....GGGG.......','......GGG.......','.....GGG........','....GGG.........','...GGG..........','..GGG...........','..GG............','................','................','................'],
- '3711':['................','.....KKKK.......','....KkkkkK......','....KkkkkK......','.....KKKK.......','................','..bb..bb..bb....','.bbbbbbbbbbbbb..','..bb..bb..bb....','.bbbbbbbbbbbbb..','..bb..bb..bb....','................','................','................','................','................'],
- 'YZU':['................','....kkkkkk......','..kkKKKKKKkk....','.kKKKKKKKKKKk...','.kKKkkKKkkKKk...','.kKkKkkkkKkKk...','.kKkKkkkkKkKk...','.kKKkkKKkkKKk...','.kKKKKKKKKKKk...','..kkKKKKKKkk....','....kkkkkk......','................','................','................','................','................'],
+ '3711':['................','..KKK....mmm....','.KkkK...mwwm....','.KkkK...mwwm....','..KKK....mmm....','................','..bb..bb..bb....','.bbbbbbbbbbbbb..','..bb..bb..bb....','.bbbbbbbbbbbbb..','..bb..bb..bb....','................','................','................','................','................'],
+ 'YZU':['................','.......cc.......','.....cccc.......','...cccccc.......','..ccccccc.......','..cccccc........','...cccc....b....','....ccc...bb....','.....cc..b......','......c.........','................','................','................','................','................','................'],
  'YOUJIAN':['................','.....gggg.......','....gggggg......','....gwgggg......','....gggggg......','....ggwwgg......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....gggggg......','.....gggg.......','................','................','................'],
  COIN:['................','....kkkkkk......','..kkKKKKKKkk....','.kKKkkKKKKKKk...','.kKkKkkKKKkKk...','.kKkKKKKKKkKk...','.kKkKkkKKKkKk...','.kKKkkKKKKKKk...','..kkKKKKKKkk....','....kkkkkk......','................','................','................','................','................','................']
 };
@@ -301,32 +331,57 @@ function pxIcon(name,size){
   return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" shape-rendering="crispEdges">'+rects+'</svg>';
 }
 
-// ---- K 線圖（雙擊股票卡開啟）：每根 K = 一個 tick，紅漲綠跌 ----
-let kCandles=[], kHover=-1, kMouseY=null, kLayout=null;
+// ---- 走勢圖（雙擊股票卡開啟）：折線/K線切換、縮放平移、時間範圍、十字線 ----
+let kCandles=[], kHover=-1, kMouseY=null, kLayout=null, kReq=0, kDrag=null;
+let kMode='line', kStart=0, kCount=0, kRange='all';
 function buildCandles(history,fills){
   const cs=history.map((p,i)=>({t:p.created_at,open:i?Number(history[i-1].price):Number(p.price),close:Number(p.price),high:0,low:0}));
   cs.forEach(c=>{c.high=Math.max(c.open,c.close);c.low=Math.min(c.open,c.close);});
   for(const f of fills||[]){let idx=-1;for(let i=0;i<cs.length;i++){if(cs[i].t<=f.created_at)idx=i;else break;}if(idx>=0){cs[idx].high=Math.max(cs[idx].high,Number(f.price));cs[idx].low=Math.min(cs[idx].low,Number(f.price));}}
   return cs;
 }
-let kReq=0;
 async function openChart(sym){
   const req=++kReq;
   selected=sym; render();
-  const cv0=$('#k-canvas'); const dpr0=window.devicePixelRatio||1; cv0.width=840*dpr0; cv0.height=380*dpr0;
   const s=(state.stocks||[]).find(x=>x.symbol===sym);
   $('#k-icon').innerHTML=pxIcon(sym,28);
-  $('#k-title').textContent=((s&&s.nickname)||sym)+' '+sym+' K 線';
+  $('#k-title').textContent=((s&&s.nickname)||sym)+' '+sym+' 走勢';
   $('#chart-modal').classList.remove('hidden');
   $('#k-info').textContent='載入中…';
+  const cv0=$('#k-canvas'); const dpr0=window.devicePixelRatio||1; cv0.width=840*dpr0; cv0.height=380*dpr0;
   const h=await api('/api/history?symbol='+encodeURIComponent(sym));
   if(req!==kReq)return;
   if(!h||!h.ok){$('#k-info').textContent='載入失敗';return;}
-  kCandles=buildCandles(h.history,h.fills||[]); kHover=-1; kMouseY=null;
+  kCandles=buildCandles(h.history,h.fills||[]); kHover=-1; kMouseY=null; kDrag=null;
+  setRange(kRange);
   $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+f.created_at+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+f.buyer_name+'</td><td>'+f.seller_name+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
   drawChart();
 }
 function closeChart(){$('#chart-modal').classList.add('hidden');}
+function fmtTickUTC(ms){return new Date(ms).toISOString().slice(0,19).replace('T',' ');}
+function setRange(r){
+  kRange=r;
+  document.querySelectorAll('#k-ranges button').forEach(b=>b.classList.toggle('active',b.dataset.range===r));
+  const n=kCandles.length; if(!n){kStart=0;kCount=0;return;}
+  if(r==='all'){kStart=0;kCount=n;clampView();drawChart();return;}
+  const hours={'4h':4,'2h':2,'1h':1}[r]; if(hours==null){kStart=0;kCount=n;clampView();drawChart();return;}
+  const lastMs=Date.parse(kCandles[n-1].t.replace(' ','T')+'Z');
+  const cutoff=fmtTickUTC(lastMs-hours*3600e3);
+  let start=0; for(let i=0;i<n;i++){if(kCandles[i].t>=cutoff){start=i;break;}}
+  kStart=start; kCount=n-start; clampView(); drawChart();
+}
+function clampView(){
+  const n=kCandles.length; if(!n)return;
+  kCount=Math.max(Math.min(8,n),Math.min(kCount,n));
+  kStart=Math.max(0,Math.min(kStart,n-kCount));
+}
+function zoomAt(factor){
+  const n=kCandles.length; if(!n)return;
+  const center=kStart+kCount/2;
+  kCount=Math.round(kCount*factor);
+  kStart=Math.round(center-kCount/2);
+  clampView(); drawChart();
+}
 function drawChart(){
   const cv=$('#k-canvas'); const dpr=window.devicePixelRatio||1;
   const W=840,H=380;
@@ -334,55 +389,82 @@ function drawChart(){
   const cw=W,ch=H; ctx.clearRect(0,0,cw,ch);
   ctx.fillStyle='#0b0e1a'; ctx.fillRect(0,0,cw,ch);
   const L=8,R=58,T=12,B=22,pw=cw-L-R,ph=ch-T-B;
-  kLayout={L,T,step:0,pw,ph,min:0,max:1,cw,ch};
   const n=kCandles.length;
-  if(!n){$('#k-info').textContent='近 6 小時無價格資料';return;}
+  if(!n){$('#k-info').textContent='近 6 小時無價格資料';kLayout=null;return;}
+  clampView();
+  const vis=kCandles.slice(kStart,kStart+kCount), m=vis.length;
   let min=Infinity,max=-Infinity;
-  kCandles.forEach(c=>{min=Math.min(min,c.low);max=Math.max(max,c.high);});
+  vis.forEach(c=>{min=Math.min(min,kMode!=='candle'?c.close:c.low);max=Math.max(max,kMode!=='candle'?c.close:c.high);});
   const pad=(max-min)*0.08||1; min-=pad; max+=pad;
   const y=v=>T+(1-(v-min)/(max-min))*ph;
-  const step=pw/n, bw=Math.min(28,Math.max(2,step*0.62));
+  const step=pw/m, bw=Math.min(28,Math.max(2,step*0.62));
   kLayout={L,T,step,pw,ph,min,max,cw,ch};
+  const X=i=>L+(i-kStart)*step+step/2;
   ctx.strokeStyle='#1c2340'; ctx.fillStyle='#8a90b8'; ctx.font='10px monospace'; ctx.textAlign='left';
   for(let i=0;i<=4;i++){const v=min+(max-min)*i/4,gy=y(v);ctx.beginPath();ctx.moveTo(L,gy);ctx.lineTo(L+pw,gy);ctx.stroke();ctx.fillText('$'+fmt(v),L+pw+6,gy+3);}
-  kCandles.forEach((c,i)=>{
-    const x=L+i*step+step/2, up=c.close>=c.open, col=up?'#ff5470':'#3ddc78';
-    ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(x,y(c.high)); ctx.lineTo(x,y(c.low)); ctx.stroke();
-    const y1=y(Math.max(c.open,c.close)), y2=y(Math.min(c.open,c.close));
-    ctx.fillRect(x-bw/2,Math.min(y1,y2),bw,Math.max(1,Math.abs(y2-y1)));
-  });
+  if(kMode==='candle'){
+    vis.forEach((c,i)=>{
+      const x=X(kStart+i), up=c.close>=c.open, col=up?'#ff5470':'#3ddc78';
+      ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(x,y(c.high)); ctx.lineTo(x,y(c.low)); ctx.stroke();
+      const y1=y(Math.max(c.open,c.close)), y2=y(Math.min(c.open,c.close));
+      ctx.fillRect(x-bw/2,Math.min(y1,y2),bw,Math.max(1,Math.abs(y2-y1)));
+    });
+  } else {
+    const up=vis[m-1].close>=vis[0].close, col=up?'#ff5470':'#3ddc78';
+    const pts=vis.map((c,i)=>X(kStart+i)+','+y(c.close));
+    ctx.beginPath(); ctx.moveTo(X(kStart),T+ph); ctx.lineTo(X(kStart),y(vis[0].close));
+    pts.forEach(p=>{const a=p.split(',');ctx.lineTo(Number(a[0]),Number(a[1]));});
+    ctx.lineTo(X(kStart+m-1),T+ph); ctx.closePath();
+    ctx.fillStyle=col; ctx.globalAlpha=0.15; ctx.fill(); ctx.globalAlpha=1;
+    ctx.beginPath();
+    pts.forEach((p,i)=>{const a=p.split(',');if(i===0)ctx.moveTo(Number(a[0]),Number(a[1]));else ctx.lineTo(Number(a[0]),Number(a[1]));});
+    ctx.strokeStyle=col; ctx.lineWidth=2; ctx.stroke();
+    const last=pts[m-1].split(',');
+    ctx.beginPath(); ctx.arc(Number(last[0]),Number(last[1]),3,0,7); ctx.fillStyle=col; ctx.fill();
+  }
+  // MA5
   ctx.strokeStyle='#ffd23f'; ctx.lineWidth=1.5; ctx.beginPath();
   let started=false;
-  kCandles.forEach((c,i)=>{if(i<4)return;const ma=kCandles.slice(i-4,i+1).reduce((s,x)=>s+x.close,0)/5;const x=L+i*step+step/2;if(!started){ctx.moveTo(x,y(ma));started=true;}else ctx.lineTo(x,y(ma));});
+  vis.forEach((c,i)=>{const gi=kStart+i; if(gi<4)return; const ma=kCandles.slice(gi-4,gi+1).reduce((s,x)=>s+x.close,0)/5; const x=X(gi); if(!started){ctx.moveTo(x,y(ma));started=true;}else ctx.lineTo(x,y(ma));});
   ctx.stroke();
-  const last=kCandles[n-1].close, ly=y(last);
+  // 現價虛線
+  const last=vis[m-1].close, ly=y(last);
   ctx.strokeStyle='rgba(232,236,245,.5)'; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(L,ly); ctx.lineTo(L+pw,ly); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle='#e8ecf5'; ctx.fillText('$'+fmt(last),L+pw+6,ly+3);
   ctx.fillStyle='#8a90b8'; ctx.textAlign='center';
-  const every=Math.max(1,Math.floor(n/8));
-  for(let i=0;i<n;i+=every){ctx.fillText(kCandles[i].t.slice(11,16),L+i*step+step/2,ch-6);}
-  if(kHover>=0&&kHover<n){
-    const c=kCandles[kHover], x=L+kHover*step+step/2;
+  const every=Math.max(1,Math.floor(m/8));
+  for(let i=0;i<m;i+=every){ctx.fillText(vis[i].t.slice(11,16),X(kStart+i),ch-6);}
+  // 十字線
+  if(kHover>=kStart&&kHover<kStart+kCount&&kHover<n){
+    const c=kCandles[kHover], x=X(kHover);
     ctx.strokeStyle='rgba(232,236,245,.35)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(x,T); ctx.lineTo(x,T+ph); ctx.stroke();
     if(kMouseY!=null){ctx.beginPath(); ctx.moveTo(L,kMouseY); ctx.lineTo(L+pw,kMouseY); ctx.stroke();
       const pv=min+(1-(kMouseY-T)/ph)*(max-min); ctx.fillStyle='#e8ecf5'; ctx.textAlign='left'; ctx.fillText('$'+fmt(pv),L+pw+6,kMouseY+3);}
     $('#k-info').innerHTML=c.t+'　開 <b>$'+fmt(c.open)+'</b>　高 <b>$'+fmt(c.high)+'</b>　低 <b>$'+fmt(c.low)+'</b>　收 <b style="color:'+(c.close>=c.open?'#ff5470':'#3ddc78')+'">$'+fmt(c.close)+'</b>';
   } else {
-    $('#k-info').textContent='共 '+n+' 根 K 棒（每根 = 一個 tick，15 秒）｜ 移動游標看十字線';
+    $('#k-info').textContent=(kMode==='candle'?'K 線':'折線')+'｜ 顯示 '+kStart+'~'+(kStart+kCount-1)+' / 共 '+n+' 根（每根 = 15 秒 tick）｜ 滾輪縮放、拖曳平移、移動游標看十字線';
   }
 }
 function bindChart(){
   const cv=$('#k-canvas');
-  cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect(); if(!kLayout)return; const x=(e.clientX-r.left)*(840/r.width), yy=(e.clientY-r.top)*(380/r.height); const i=Math.floor((x-kLayout.L)/kLayout.step); kHover=(i>=0&&i<kCandles.length)?i:-1; kMouseY=Math.max(kLayout.T,Math.min(kLayout.T+kLayout.ph,yy)); drawChart();});
-  cv.addEventListener('mouseleave',()=>{kHover=-1;kMouseY=null;drawChart();});
+  document.querySelectorAll('#k-modes button').forEach(b=>b.onclick=()=>{kMode=b.dataset.mode;document.querySelectorAll('#k-modes button').forEach(x=>x.classList.toggle('active',x===b));drawChart();});
+  document.querySelectorAll('#k-ranges button').forEach(b=>b.onclick=()=>setRange(b.dataset.range));
+  $('#k-zoom-in').onclick=()=>zoomAt(0.75);
+  $('#k-zoom-out').onclick=()=>zoomAt(1.33);
+  $('#k-reset').onclick=()=>setRange(kRange);
+  cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.deltaY<0?0.8:1.25);},{passive:false});
+  cv.addEventListener('mousedown',e=>{const r=cv.getBoundingClientRect();kDrag={x:(e.clientX-r.left)*(840/r.width),start:kStart};});
+  cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect(); if(!kLayout)return; const x=(e.clientX-r.left)*(840/r.width), yy=(e.clientY-r.top)*(380/r.height); if(kDrag){kStart=kDrag.start-Math.round((x-kDrag.x)/kLayout.step); clampView(); kHover=-1; drawChart(); return;} const i=Math.floor((x-kLayout.L)/kLayout.step)+kStart; kHover=(i>=kStart&&i<kStart+kCount)?i:-1; kMouseY=Math.max(kLayout.T,Math.min(kLayout.T+kLayout.ph,yy)); drawChart();});
+  window.addEventListener('mouseup',()=>{kDrag=null;});
+  cv.addEventListener('mouseleave',()=>{kHover=-1;kMouseY=null;kDrag=null;drawChart();});
   $('#k-close').onclick=closeChart;
   $('#chart-modal').addEventListener('click',e=>{if(e.target.id==='chart-modal')closeChart();});
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeChart();});
 }
 
-async function poll(){
+async function poll(){ clearTimeout(timer);
   try{
     state=await api('/api/live?symbol='+selected+(tab==='market'?'&light=1':''));
     render();
@@ -441,17 +523,23 @@ function renderMarket(){
   const grid=$('#stock-grid');
   grid.innerHTML=state.stocks.map(s=>{
     const hist=state.histories[s.symbol]||[];
+    const vals=hist.map(p=>Number(p.price));
+    const hi=vals.length?Math.max(...vals):s.price, lo=vals.length?Math.min(...vals):s.price;
     const chg=pct(s.price,s.ref_price);
     const cls=chg>=0?'up':'down';
     const color=chg>=0?'var(--red)':'var(--green)';
-    return '<div class="stock-card panel" data-sym="'+s.symbol+'" title="單擊選擇下單 · 雙擊開 K 線圖">'
+    const prev=prevPrices[s.symbol]; let flash='';
+    if(prev!=null&&prev!==s.price)flash=s.price>prev?' flash-up':' flash-down';
+    prevPrices[s.symbol]=s.price;
+    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 雙擊開走勢圖">'
       +'<div class="stock-head">'+pxIcon(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
-      +'<div class="price">$'+fmt(s.price)+'</div>'
+      +'<div class="price'+flash+'">$'+fmt(s.price)+'</div>'
       +'<div class="chg '+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</div>'
+      +'<div class="mini-stats">高 $'+fmt(hi)+' · 低 $'+fmt(lo)+'</div>'
       +sparkline(hist,200,48,color)
       +'</div>';
   }).join('');
-  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);}); // 單擊選擇下單，雙擊開 K 線圖
+  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);}); // 單擊選擇下單，雙擊開走勢圖
   renderDetail();
 }
 
@@ -466,6 +554,16 @@ function renderDetail(){
   // 只更新標題、走勢圖與盤口；下單表單維持不動，避免輪詢時搶走輸入框焦點
   $('#detail-title').innerHTML=(s.nickname||s.name)+' '+s.symbol+' $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
   $('#ord-sym').textContent='下單：'+s.symbol+' '+(s.nickname||s.name);
+  const vals=hist.map(p=>Number(p.price));
+  const hi=vals.length?Math.max(...vals):s.price, lo=vals.length?Math.min(...vals):s.price;
+  const dChg=s.price-s.ref_price, dChgPct=pct(s.price,s.ref_price);
+  const bookOk=state.bookSymbol===selected; const bid=bookOk&&state.bids&&state.bids[0], ask=bookOk&&state.asks&&state.asks[0];
+  $('#detail-stats').innerHTML=[
+    ['漲跌',(dChg>=0?'+':'')+fmt(dChg)+' ('+(dChgPct>=0?'+':'')+dChgPct.toFixed(2)+'%)',dChg>=0?'var(--red)':'var(--green)'],
+    ['最高','$'+fmt(hi)],['最低','$'+fmt(lo)],
+    ['買一',bid?'$'+fmt(bid.price)+' × '+bid.quantity:'-'],
+    ['賣一',ask?'$'+fmt(ask.price)+' × '+ask.quantity:'-']
+  ].map(x=>'<div><div style="color:var(--dim); font-size:10px">'+x[0]+'</div><div style="color:'+(x[2]||'var(--txt)')+'">'+x[1]+'</div></div>').join('');
   // 走勢圖加上價格單位：最高/最低標籤 + 現價虛線標籤
   $('#detail-chart').innerHTML=hist.length>1?(()=>{const vals=hist.map(p=>Number(p.price));const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
     const pts=vals.map((v,i)=>(i*(540/(vals.length-1))).toFixed(1)+','+(170-((v-min)/span)*160).toFixed(1)).join(' ');
