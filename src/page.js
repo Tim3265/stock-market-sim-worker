@@ -95,7 +95,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
   .rank.r2{background:#c8d0e8;color:#14162b;border-color:#8a90b8;}
   .rank.r3{background:#d2691e;color:#fff;border-color:#a0522d;}
   #my-rank{position:sticky;bottom:8px;margin-top:10px;padding:10px 14px;font-size:13px;}
-  .stock-card svg{width:100%; height:48px; display:block; margin-top:8px;}
+  .stock-card .spark-btn svg{width:100%; height:48px; display:block; margin-top:8px;}
   .stock-head{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
   .stock-head .nick{font-size:15px; font-weight:bold;}
   .stock-head .sym{margin-left:auto; color:var(--blue); font-size:10px;}
@@ -193,7 +193,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
   <h1><span id="login-coin" class="px-icon" style="vertical-align:-4px"></span> 股市模擬大戶<span class="px-cursor"></span></h1>
   <div class="sub">PIXEL STOCK TRADER · 六檔虛擬市場 · 大樹證券 2.8 折</div>
   <div id="login-box" class="panel">
-    <input id="nickname" maxlength="12" placeholder="輸入暱稱（可留空）">
+    <input id="nickname" maxlength="6" placeholder="想個稱號（留空隨機，最多 6 字）">
     <button id="btn-play" style="font-size:14px; padding:14px;">▶ 開始交易</button>
     <div class="hint">訪客模式：暱稱即可開戶，初始資金依市場總市值計算</div>
   </div>
@@ -332,7 +332,8 @@ const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:2});
 // SQLite 存 UTC 字串；這裡轉成玩家本地時間（台灣 UTC+8）。一小時內顯示相對時間，今天顯示 HH:MM:SS，跨日顯示 MM/DD HH:MM
 function fmtTime(utc){
   if(!utc)return '-';
-  const d=new Date(utc.replace(' ','T')+'Z'); if(isNaN(d))return utc;
+  const iso=utc.includes('T')?utc:utc.replace(' ','T');
+  const d=new Date(iso.endsWith('Z')?iso:iso+'Z'); if(isNaN(d))return utc;
   const now=new Date(); const diff=(now-d)/1000;
   if(diff<15)return '剛剛';
   if(diff<60)return Math.floor(diff)+' 秒前';
@@ -423,12 +424,10 @@ function pxIconAnim(name,size){
   const def=PX_ICONS[name]||PX_ICONS.COIN;
   const n=def.frames.length;
   const dur=(n*0.18).toFixed(2);
-  let framesSvg='';
-  def.frames.forEach((f,i)=>{framesSvg+=pxIcon(name,size,i);});
-  // 用多個 absolutely 疊放的 svg + CSS animation 控制顯示哪一幀
+  // 多個 absolutely 疊放的 svg + CSS animation 控制顯示哪一幀；delay 用 -(n-i)*0.18 讓幀正向播放
   let layers='';
   def.frames.forEach((_,i)=>{
-    const delay=(-i*0.18).toFixed(2);
+    const delay=(i===0?0:-(n-i)*0.18).toFixed(2);
     layers+='<span style="position:absolute;inset:0;animation:pxframe'+name+' '+dur+'s steps(1) infinite;animation-delay:'+delay+'s;opacity:'+(i===0?1:0)+'" class="pxlayer">'+pxIcon(name,size,i)+'</span>';
   });
   return '<span style="position:relative;display:inline-flex;width:'+size+'px;height:'+size+'px">'+layers+'</span>';
@@ -647,9 +646,9 @@ function renderMarket(){
     const prev=prevPrices[s.symbol]; let flash='';
     if(prev!=null&&prev!==s.price)flash=s.price>prev?' flash-up':' flash-down';
     prevPrices[s.symbol]=s.price;
-    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 點迷你走勢開圖">'
+    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+flash+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 點迷你走勢開圖">'
       +'<div class="stock-head" title="'+(PX_NAMES[s.symbol]||s.name)+'">'+pxIconAnim(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
-      +'<div class="price'+flash+'">$'+fmt(s.price)+'</div>'
+      +'<div class="price">$'+fmt(s.price)+'</div>'
       +'<div class="chg-pill '+cls+'">'+(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(s.price-s.ref_price))+' ('+(chg>=0?'+':'')+chg.toFixed(2)+'%)</div>'
       +'<span class="spark-btn" title="點開 K 線圖">'+sparkline(hist,200,48,color)+'</span>'
       +'</div>';
@@ -768,7 +767,7 @@ async function renderLeaderboard(){
   }).join('');
   const myIdx=(r.players||[]).findIndex(p=>p.username===me);
   const bar=$('#my-rank');
-  if(bar)bar.innerHTML=myIdx>=0?('我的排名 <b>#'+(myIdx+1)+'</b> ｜ '+me+' ｜ 總資產 <b>$'+fmt(r.players[myIdx].total_assets)+'</b>'):'';
+  if(bar){bar.style.display=myIdx>=0?'':'none';bar.innerHTML=myIdx>=0?('我的排名 <b>#'+(myIdx+1)+'</b> ｜ '+me+' ｜ 總資產 <b>$'+fmt(r.players[myIdx].total_assets)+'</b>'):'';}
 }
 
 async function renderBots(){

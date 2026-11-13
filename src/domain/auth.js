@@ -66,14 +66,15 @@ const GUEST_PREFIXES=['少年','抄底','隔日沖','滿手','無敵','佛系','
 function guestCandidate(){
   const b=GUEST_BASES[Math.floor(Math.random()*GUEST_BASES.length)];
   const p=Math.random()<0.35?GUEST_PREFIXES[Math.floor(Math.random()*GUEST_PREFIXES.length)]:'';
-  return (p+b).slice(0,5);
+  return (p+b).slice(0,6);
 }
- const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 5) : '';
+ const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 6) : '';
  const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '');
  const initialCash = await marketInitialCash(db);
  let username, id;
  for (let attempt = 0; attempt < 8; attempt++) {
   if (attempt === 0 && baseName) username = baseName;
+  else if (attempt === 1 && baseName) username = baseName.slice(0,4) + (1 + Math.floor(Math.random()*99));
   else if (attempt < 5) username = guestCandidate();
   else username = GUEST_BASES[Math.floor(Math.random()*GUEST_BASES.length)].slice(0,3) + (1 + Math.floor(Math.random()*99));
   const salt = randomHex(16), hash = await derive(randomHex(16), salt);
