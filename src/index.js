@@ -266,8 +266,8 @@ async function route(request, env) {
     const rows = await env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(symbol).all();
     const fills = await env.DB.prepare(`SELECT f.id,f.shares,f.price,f.amount,f.created_at,b.name buyer_name,se.name seller_name
       FROM order_fills f JOIN accounts b ON b.id=f.buyer_id JOIN accounts se ON se.id=f.seller_id
-      WHERE f.symbol=? ORDER BY f.id DESC LIMIT 20`).bind(symbol).all();
-    return ok({ stock, history: rows.results.reverse(), fills: fills.results.reverse() });
+      WHERE f.symbol=? AND f.created_at>=datetime('now','-6 hours') ORDER BY f.id DESC LIMIT 20`).bind(symbol).all();
+    return ok({ stock, history: rows.results.reverse(), fills: fills.results });
   }
 
   if (path === '/api/orderbook' && request.method === 'GET') {

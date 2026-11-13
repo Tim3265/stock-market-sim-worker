@@ -309,14 +309,18 @@ function buildCandles(history,fills){
   for(const f of fills||[]){let idx=-1;for(let i=0;i<cs.length;i++){if(cs[i].t<=f.created_at)idx=i;else break;}if(idx>=0){cs[idx].high=Math.max(cs[idx].high,Number(f.price));cs[idx].low=Math.min(cs[idx].low,Number(f.price));}}
   return cs;
 }
+let kReq=0;
 async function openChart(sym){
+  const req=++kReq;
   selected=sym; render();
+  const cv0=$('#k-canvas'); const dpr0=window.devicePixelRatio||1; cv0.width=840*dpr0; cv0.height=380*dpr0;
   const s=(state.stocks||[]).find(x=>x.symbol===sym);
   $('#k-icon').innerHTML=pxIcon(sym,28);
   $('#k-title').textContent=((s&&s.nickname)||sym)+' '+sym+' K 線';
   $('#chart-modal').classList.remove('hidden');
   $('#k-info').textContent='載入中…';
   const h=await api('/api/history?symbol='+encodeURIComponent(sym));
+  if(req!==kReq)return;
   if(!h||!h.ok){$('#k-info').textContent='載入失敗';return;}
   kCandles=buildCandles(h.history,h.fills||[]); kHover=-1; kMouseY=null;
   $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+f.created_at+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+f.buyer_name+'</td><td>'+f.seller_name+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
@@ -325,8 +329,8 @@ async function openChart(sym){
 function closeChart(){$('#chart-modal').classList.add('hidden');}
 function drawChart(){
   const cv=$('#k-canvas'); const dpr=window.devicePixelRatio||1;
-  const W=840,H=380; cv.width=W*dpr; cv.height=H*dpr;
-  const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+  const W=840,H=380;
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
   const cw=W,ch=H; ctx.clearRect(0,0,cw,ch);
   ctx.fillStyle='#0b0e1a'; ctx.fillRect(0,0,cw,ch);
   const L=8,R=58,T=12,B=22,pw=cw-L-R,ph=ch-T-B;
@@ -337,7 +341,7 @@ function drawChart(){
   kCandles.forEach(c=>{min=Math.min(min,c.low);max=Math.max(max,c.high);});
   const pad=(max-min)*0.08||1; min-=pad; max+=pad;
   const y=v=>T+(1-(v-min)/(max-min))*ph;
-  const step=pw/n, bw=Math.max(2,step*0.62);
+  const step=pw/n, bw=Math.min(28,Math.max(2,step*0.62));
   kLayout={L,T,step,pw,ph,min,max,cw,ch};
   ctx.strokeStyle='#1c2340'; ctx.fillStyle='#8a90b8'; ctx.font='10px monospace'; ctx.textAlign='left';
   for(let i=0;i<=4;i++){const v=min+(max-min)*i/4,gy=y(v);ctx.beginPath();ctx.moveTo(L,gy);ctx.lineTo(L+pw,gy);ctx.stroke();ctx.fillText('$'+fmt(v),L+pw+6,gy+3);}
@@ -371,7 +375,7 @@ function drawChart(){
 }
 function bindChart(){
   const cv=$('#k-canvas');
-  cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect(); if(!kLayout)return; const x=e.clientX-r.left, yy=e.clientY-r.top; const i=Math.floor((x-kLayout.L)/kLayout.step); kHover=(i>=0&&i<kCandles.length)?i:-1; kMouseY=yy; drawChart();});
+  cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect(); if(!kLayout)return; const x=(e.clientX-r.left)*(840/r.width), yy=(e.clientY-r.top)*(380/r.height); const i=Math.floor((x-kLayout.L)/kLayout.step); kHover=(i>=0&&i<kCandles.length)?i:-1; kMouseY=Math.max(kLayout.T,Math.min(kLayout.T+kLayout.ph,yy)); drawChart();});
   cv.addEventListener('mouseleave',()=>{kHover=-1;kMouseY=null;drawChart();});
   $('#k-close').onclick=closeChart;
   $('#chart-modal').addEventListener('click',e=>{if(e.target.id==='chart-modal')closeChart();});
@@ -387,7 +391,8 @@ async function poll(){
 }
 
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(timer);poll();}});
-function start(){
+let started=false;
+function start(){ if(started)return; started=true;
   $('#cash-coin').innerHTML=pxIcon('COIN',16);
   bindChart();
   $('#btn-logout').onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.reload();};
