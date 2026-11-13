@@ -20,13 +20,18 @@ it('recharge 在 CAS 重試耗盡時回傳 409 CONFLICT',async()=>{
  }
 });
 
-it('allows repeated guest logins with the same nickname',async()=>{
+it('guest login 名字=帳號=密碼：同名稱登入同一個帳戶',async()=>{
  const a=await post('/api/auth/guest',{nickname:'guest'}),b=await post('/api/auth/guest',{nickname:'guest'});
  expect(a.status).toBe(200);expect(b.status).toBe(200);
  const ca=a.headers.get('Set-Cookie').split(';')[0],cb=b.headers.get('Set-Cookie').split(';')[0];
  const aa=await (await SELF.fetch(base+'/api/account',{headers:{Cookie:ca}})).json();
  const ab=await (await SELF.fetch(base+'/api/account',{headers:{Cookie:cb}})).json();
- expect(aa.account.id).not.toBe(ab.account.id);
+ expect(aa.account.id).toBe(ab.account.id); // 同名回到同一帳戶
+ expect(aa.account.name).toBe('guest');
+ const c=await post('/api/auth/guest',{nickname:'other'});
+ const cc=c.headers.get('Set-Cookie').split(';')[0];
+ const ac=await (await SELF.fetch(base+'/api/account',{headers:{Cookie:cc}})).json();
+ expect(ac.account.id).not.toBe(aa.account.id); // 不同名開新帳戶
 });
 describe('玩家登入和資料隔離',()=>{
  it('成交類別篩選先查詢再限制筆數',async()=>{

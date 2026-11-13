@@ -70,6 +70,15 @@ function guestCandidate(){
 }
  const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 6) : '';
  const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '');
+ // 名字 = 帳號 = 密碼：輸入過名字就登入同名帳戶；不存在才開新帳戶
+ if (baseName) {
+  const existing = await db.prepare('SELECT account_id,username FROM player_credentials WHERE username=?').bind(baseName).first();
+  if (existing) {
+   const token = randomHex(32), tokenHash = await digest(token), expires = Date.now() + 7 * 86400000;
+   await db.prepare('INSERT INTO player_sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').bind(tokenHash, existing.account_id, expires).run();
+   return { token, accountId: existing.account_id, username: existing.username };
+  }
+ }
  const initialCash = await marketInitialCash(db);
  let username, id;
  for (let attempt = 0; attempt < 8; attempt++) {
