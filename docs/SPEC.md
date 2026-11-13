@@ -183,6 +183,8 @@ change    = drift + noise
 | 造市商 | 每 tick | 取消自己所有掛單 → 以中價為中心重掛 5 層買賣單 |
 | 動能派 | 每 6 tick | 近 5 筆成交價連漲 > 2% → 市價買；連跌 > 2% → 市價賣 |
 | 價值派 | 每 10 tick | `price < fair × 0.97` → 限價買；`price > fair × 1.03` → 限價賣 |
+| 散戶雜訊 | 每奇數 tick | 對隨機一檔市價買／賣 35～89 股 |
+| 巨鯨波動 | 每 5 tick | 對隨機一檔市價買／賣 40～89 股 |
 | 恐慌賣壓 | 每 tick 0.5% 機率 | 進入恐慌 5 個 tick，每 tick 市價賣出持股的 20% |
 
 機器人也有現金與持股，**不能超賣、不能透支**。
@@ -306,7 +308,9 @@ accounts 1 ──< holdings >── 1 stocks
                                 │
                           price_history
 
-market_state（單列，全域時鐘與鎖）
+price_history／index_history（走勢與指數歷史）
+player_credentials 1──1 accounts；player_sessions ── accounts
+market_state（單列，全域時鐘與鎖）＋ fee_revenue（手續費累計）＋ transaction_guard（原子哨兵）
 ```
 
 ### 8.2 資料表
@@ -368,12 +372,12 @@ CREATE TRIGGER trg_order_buy_guard BEFORE INSERT ON orders
 WHEN NEW.side='BUY' AND NEW.type='LIMIT' AND NEW.status IN ('OPEN','PARTIAL')
  AND (SELECT CAST(ROUND((cash - frozen_cash)*100) AS INTEGER) FROM accounts WHERE id=NEW.account_id)
      < (CAST(ROUND(NEW.price*100) AS INTEGER) * (NEW.shares - NEW.filled_shares)
-        + CAST(CEIL(NEW.price*100*(NEW.shares - NEW.filled_shares)*399/1000000) AS INTEGER))
+        + CAST(CEIL(ROUND(NEW.price*100)*(NEW.shares - NEW.filled_shares)*399/1000000) AS INTEGER))
 BEGIN SELECT RAISE(ABORT, 'INSUFFICIENT_CASH'); END;
 
 -- 買單成交寫入時，確認「總現金」足以支付價款＋手續費。
 -- 掛單買方的資金當下可能仍屬 frozen_cash，同一個 batch 會接著釋放，
--- 因此此處檢查總現金而非可用現金（見 migrations/0008）。
+-- 因此此處檢查總現金而非可用現金（見 migrations/0011）。
 CREATE TRIGGER trg_trade_buy_guard BEFORE INSERT ON trades
 WHEN NEW.side = 'BUY'
  AND (SELECT CAST(ROUND(cash*100) AS INTEGER) FROM accounts WHERE id = NEW.account_id) < CAST(ROUND((NEW.amount + NEW.fee_amount)*100) AS INTEGER)
@@ -564,6 +568,7 @@ UPDATE market_state
 | `NOT_YOUR_ORDER` | 403 | 不能取消別人的委託 |
 | `NOT_FOUND` | 404 | 帳戶／股票不存在 |
 | `UNAUTHENTICATED` | 401 | 未登入或工作階段無效 |
+| `FORBIDDEN` | 403 | 跨站請求被拒（Origin 不符）或缺少開發金鑰 |
 | `RATE_LIMITED` | 429 | 每 IP 五分鐘 15 次（登入類另計；開發端點獨立桶） |
 | `CONFLICT` | 409 | 撮合鎖競爭，請重試 |
 | `INVALID_STATE` | 400 | 資料違反資料庫約束（CHECK 觸發） |
@@ -651,13 +656,14 @@ snapshot(db, accountId)
 | 額度 | Workers 10 萬 req/日、D1 10 萬列寫入/日、5GB |
 | 可觀測性 | 每個錯誤有穩定 `code`；結構化 log |
 
-**活躍 2 小時的寫入估算**（6 檔股票）
+**活躍 3 小時的寫入估算**（6 檔股票，每 15 秒 1 tick，720 ticks）
 
 | 項目 | 每 tick | tick 數 | 總寫入 |
 |---|---|---|---|
-| 造市商 6 檔 × 5 單 | 30 | 720 | 21,600 |
+| 造市商 6 檔 × 10 單（買賣各 5 層） | 60 | 720 | 43,200 |
 | 成交／歷史 | 約 12 | 720 | 8,640 |
-| 合計 | | | **30,240 列／日** |
+| 指數歷史 | 1 | 720 | 720 |
+| 合計 | | | **52,560 列／3 小時** |
 
 > 批次上限檢查：D1 交易上限 1000 句；最壞情況（50 個掛單全成交）約 503 句，低於上限，單一 batch 原子性成立。
 
