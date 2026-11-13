@@ -255,7 +255,7 @@ async function route(request, env) {
     const rows=await env.DB.prepare(`SELECT COALESCE(c.username,a.name) username,a.is_bot,ROUND(a.cash+COALESCE(SUM(h.shares*s.price),0),2) total_assets
       FROM accounts a LEFT JOIN player_credentials c ON c.account_id=a.id
       LEFT JOIN holdings h ON h.account_id=a.id LEFT JOIN stocks s ON s.symbol=h.symbol
-      GROUP BY a.id ORDER BY total_assets DESC,username LIMIT 100`).all();
+      WHERE a.is_bot=0 GROUP BY a.id ORDER BY total_assets DESC,username LIMIT 100`).all();
     return ok({players:rows.results});
   }
 
