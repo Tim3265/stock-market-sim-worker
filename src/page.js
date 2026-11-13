@@ -323,6 +323,7 @@ function renderMarket(){
       +'<div class="chg '+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</div>'
       +sparkline(hist,200,48,color)
       +'</div>';
+  }).join('');
   grid.querySelectorAll('.stock-card').forEach(c=>c.onclick=()=>{selected=c.dataset.sym;render();poll();}); // 先即時渲染，再背景更新
   renderDetail();
 }
