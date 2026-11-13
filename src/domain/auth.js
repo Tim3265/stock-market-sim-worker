@@ -72,7 +72,7 @@ function guestCandidate(){
  const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '');
  // 名字 = 帳號 = 密碼：輸入過名字就登入同名帳戶；不存在才開新帳戶
  if (baseName) {
-  const existing = await db.prepare('SELECT account_id,username FROM player_credentials WHERE username=?').bind(baseName).first();
+  const existing = await db.prepare('SELECT account_id,username FROM player_credentials WHERE username=? AND is_guest=1').bind(baseName).first();
   if (existing) {
    const token = randomHex(32), tokenHash = await digest(token), expires = Date.now() + 7 * 86400000;
    await db.prepare('INSERT INTO player_sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').bind(tokenHash, existing.account_id, expires).run();
@@ -91,7 +91,7 @@ function guestCandidate(){
   try {
    await db.batch([
     db.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,?,?)').bind(id, username, initialCash, initialCash),
-    db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash) VALUES(?,?,?,?)').bind(id, username, salt, hash)
+    db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash,is_guest) VALUES(?,?,?,?,1)').bind(id, username, salt, hash)
    ]);
    break;
   } catch (e) { if (attempt === 7) throw e; } // username UNIQUE 碰撞時換名重試
