@@ -101,7 +101,8 @@ async function route(request, env) {
         if (upgraded) {
           const frozen = (await env.DB.prepare('SELECT symbol,frozen_shares FROM holdings WHERE account_id=?').bind(session.account_id).all()).results;
           const bySymbol = Object.fromEntries(frozen.map(row => [row.symbol, row.frozen_shares]));
-          for (const h of holdings) h.frozen_shares = bySymbol[h.symbol] || 0;
+          const nickBySymbol = Object.fromEntries(stocks.map(s => [s.symbol, s.nickname]));
+          for (const h of holdings) { h.frozen_shares = bySymbol[h.symbol] || 0; h.nickname = nickBySymbol[h.symbol]; }
         }
       }
       if (!light) {
@@ -263,7 +264,10 @@ async function route(request, env) {
     const stock = await env.DB.prepare('SELECT symbol, price FROM stocks WHERE symbol=?').bind(symbol).first();
     if (!stock) return fail('NOT_FOUND', '沒有這檔股票');
     const rows = await env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(symbol).all();
-    return ok({ stock, history: rows.results.reverse() });
+    const fills = await env.DB.prepare(`SELECT f.id,f.shares,f.price,f.amount,f.created_at,b.name buyer_name,se.name seller_name
+      FROM order_fills f JOIN accounts b ON b.id=f.buyer_id JOIN accounts se ON se.id=f.seller_id
+      WHERE f.symbol=? ORDER BY f.id DESC LIMIT 20`).bind(symbol).all();
+    return ok({ stock, history: rows.results.reverse(), fills: fills.results.reverse() });
   }
 
   if (path === '/api/orderbook' && request.method === 'GET') {
