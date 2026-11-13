@@ -327,7 +327,7 @@ async function listStocks(env) {
   return ok({ stocks });
 }
 
-// ---------- GET /api/account?id=1 ----------
+// ---------- GET /api/account（帳戶由 session 決定） ----------
 async function getAccount(env, accountId, upgraded) {
   if (accountId === null) return fail("INVALID_INPUT", "帳戶編號錯誤");
 
@@ -348,7 +348,7 @@ async function getAccount(env, accountId, upgraded) {
   });
 }
 
-// ---------- GET /api/trades?id=1&limit=20 ----------
+// ---------- GET /api/trades?limit=20（帳戶由 session 決定） ----------
 async function getTrades(env, url, accountId) {
   if (accountId === null) return fail("INVALID_INPUT", "帳戶編號錯誤");
 

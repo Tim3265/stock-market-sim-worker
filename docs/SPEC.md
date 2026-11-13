@@ -150,12 +150,14 @@ Sprint 2 造市商以一個 D1 batch 建立限價報價並凍結資源；玩家�
 
 ```sql
 UPDATE market_state
-   SET last_tick_at = ?, tick_count = tick_count + 1
- WHERE id = 1 AND last_tick_at < ?
+   SET match_seq = match_seq + 1, tick_count = tick_count + 1, last_tick_at = ?
+ WHERE id = 1 AND match_seq = ? AND last_tick_at = ?;
+INSERT INTO transaction_guard(value) SELECT changes();
 ```
 
-只有 `changes = 1` 的請求負責跑 tick，其他請求直接讀現價。
-這是**樂觀鎖（optimistic locking）**。
+同一個 `db.batch()` 內只有 `changes() = 1` 的請求搶到這一輪並負責跑 tick，
+其他請求的哨兵列為 0、整批回滾後直接讀現價。
+這是**樂觀鎖（optimistic locking）＋ 交易內哨兵**。
 
 > 為什麼不用 Cron？因為沒人看的時候不需要跑，白燒 D1 寫入額度。
 
