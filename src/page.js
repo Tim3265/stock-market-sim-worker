@@ -364,15 +364,15 @@ function setRange(r){
   document.querySelectorAll('#k-ranges button').forEach(b=>b.classList.toggle('active',b.dataset.range===r));
   const n=kCandles.length; if(!n){kStart=0;kCount=0;return;}
   if(r==='all'){kStart=0;kCount=n;clampView();drawChart();return;}
-  const hours={'4h':4,'2h':2,'1h':1}[r]||Infinity;
+  const hours={'4h':4,'2h':2,'1h':1}[r]; if(hours==null){kStart=0;kCount=n;clampView();drawChart();return;}
   const lastMs=Date.parse(kCandles[n-1].t.replace(' ','T')+'Z');
   const cutoff=fmtTickUTC(lastMs-hours*3600e3);
-  let start=0; for(let i=0;i<n;i++){if(kCandles[i].t>=cutoff)start=i;}
+  let start=0; for(let i=0;i<n;i++){if(kCandles[i].t>=cutoff){start=i;break;}}
   kStart=start; kCount=n-start; clampView(); drawChart();
 }
 function clampView(){
   const n=kCandles.length; if(!n)return;
-  kCount=Math.max(8,Math.min(kCount,n));
+  kCount=Math.max(Math.min(8,n),Math.min(kCount,n));
   kStart=Math.max(0,Math.min(kStart,n-kCount));
 }
 function zoomAt(factor){
@@ -436,7 +436,7 @@ function drawChart(){
   const every=Math.max(1,Math.floor(m/8));
   for(let i=0;i<m;i+=every){ctx.fillText(vis[i].t.slice(11,16),X(kStart+i),ch-6);}
   // 十字線
-  if(kHover>=kStart&&kHover<kStart+kCount){
+  if(kHover>=kStart&&kHover<kStart+kCount&&kHover<n){
     const c=kCandles[kHover], x=X(kHover);
     ctx.strokeStyle='rgba(232,236,245,.35)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(x,T); ctx.lineTo(x,T+ph); ctx.stroke();
