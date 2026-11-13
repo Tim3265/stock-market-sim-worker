@@ -255,9 +255,8 @@ $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 
 async function poll(){
   state=await api('/api/live?symbol='+selected);
-  const idx=await api('/api/index');
-  if(idx.ok){state.index=idx.index;state.indexHistory=idx.history;}
   render();
+  timer=setTimeout(()=>{if(!document.hidden)poll();},(state&&state.pollMs)||5000);
 }
 
 function start(){
@@ -273,7 +272,6 @@ function start(){
     render();
   });
   poll();
-  timer=setInterval(()=>{if(!document.hidden)poll();},5000);
 }
 
 function render(){

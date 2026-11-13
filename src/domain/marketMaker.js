@@ -1,11 +1,16 @@
 // Quotes are real funded orders. Requote and tick claim commit in one D1 batch.
+
 const BOT = 1000000;
 
-// 有人瀏覽時市場每 15 秒推進一輪；沒人請求就完全靜止，不燒 D1 寫入額度。
+// 有人瀏覽時市場才推進；沒人請求就完全靜止，不燒 D1 寫入額度。
+// 間隔由呼叫端依線上人數決定（見 activity.js），預設 15 秒。
+
 export const TICK_INTERVAL_MS = 15000;
 
 const round = n => Math.round(n * 100) / 100;
-export async function maybeTick(db, now = Date.now()) {
+
+export async function maybeTick(db, now = Date.now(), intervalMs = TICK_INTERVAL_MS) {
+
   let state;
   try {
     state = await db.prepare('SELECT * FROM market_state WHERE id=1').first();
@@ -13,7 +18,7 @@ export async function maybeTick(db, now = Date.now()) {
     if (String(err).includes('market_state')) return false;
     throw err;
   }
-  if (!state || now - state.last_tick_at < TICK_INTERVAL_MS) return false;
+  if (!state || now - state.last_tick_at < intervalMs) return false;
   const stocks=(await db.prepare('SELECT * FROM stocks ORDER BY symbol').all()).results;
   const maker=await db.prepare('SELECT cash FROM accounts WHERE id=1000000').first();
   if(!maker) throw new Error('Market maker account is missing');
@@ -21,15 +26,22 @@ export async function maybeTick(db, now = Date.now()) {
   const inventoryBySymbol=new Map(inventory.map(h=>[h.symbol,Number(h.shares)]));
   let remainingCash=Math.round(Number(maker.cash)*100);
   const date=new Date(now+8*3600000).toISOString().slice(0,10);
+
+  // 每兩輪才重新報價一次：D1 rows written 是硬額度，報價改為 in-place 更新
+  // （保住 order id 與 FIFO 時間優先），大幅降低每次 tick 的寫入量。
+  const requote=Number(state.tick_count)%3===0;
+
   const prepared=[
     db.prepare('UPDATE market_state SET match_seq=match_seq+1,tick_count=tick_count+1,last_tick_at=? WHERE id=1 AND match_seq=? AND last_tick_at=?').bind(now,state.match_seq,state.last_tick_at),
     db.prepare('INSERT INTO transaction_guard(value) SELECT changes()'),
-    db.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=? AND status IN ('OPEN','PARTIAL')").bind(BOT),
-    db.prepare('UPDATE accounts SET frozen_cash=0 WHERE id=?').bind(BOT),
-    db.prepare('UPDATE holdings SET frozen_shares=0 WHERE account_id=?').bind(BOT),
   ];
+  if(requote){
+    prepared.push(db.prepare('UPDATE accounts SET frozen_cash=0 WHERE id=?').bind(BOT));
+    prepared.push(db.prepare('UPDATE holdings SET frozen_shares=0 WHERE account_id=?').bind(BOT));
+  }
   let totalCash=0;
   const refBySymbol=new Map();
+
   for(const stock of stocks){
     const reference=stock.ref_date===date?stock.ref_price:stock.price;
     refBySymbol.set(stock.symbol,Number(reference));
@@ -42,23 +54,38 @@ export async function maybeTick(db, now = Date.now()) {
     const noise=((randomUnit-Math.floor(randomUnit))*2-1)*vol;
     const movement=Math.max(-0.06,Math.min(0.06,-0.05*(previous-fair)/fair+noise));
     const center=previous*(1+movement);
-    prepared.push(db.prepare('UPDATE stocks SET ref_price=?,ref_date=? WHERE symbol=?').bind(reference,date,stock.symbol));
+    if(Number(stock.ref_price)!==Number(reference)||stock.ref_date!==date)prepared.push(db.prepare('UPDATE stocks SET ref_price=?,ref_date=? WHERE symbol=?').bind(reference,date,stock.symbol));
     let reservedShares=0, remainingShares=inventoryBySymbol.get(stock.symbol)??0;
-    for(const [offset,factor] of [[0.001,0.2],[0.003,0.5],[0.008,1],[0.015,1.5],[0.025,2]]){
-      const qty=Math.max(1,Math.floor(stock.liquidity*factor));
-      const buy=Math.min(high,Math.max(0.01,Math.max(low,round(center*(1-offset)))));
-      const sell=Math.min(high,Math.max(0.01,round(center*(1+offset))));
-      const buyCents=Math.round(buy*100);
-      const feeFor=q=>Math.ceil(buyCents*q*399/1000000);
-      let buyQty=Math.min(qty,Math.floor(remainingCash/buyCents));
-      while(buyQty>0&&buyCents*buyQty+feeFor(buyQty)>remainingCash)buyQty--;
-      const sellQty=Math.min(qty,remainingShares);
-      if(buyQty>0){const reserved=buyCents*buyQty+feeFor(buyQty);remainingCash-=reserved;totalCash=round(totalCash+reserved/100);prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,?,'BUY','LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,buy,buyQty));}
-      if(sellQty>0){remainingShares-=sellQty;reservedShares+=sellQty;prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,?,'SELL','LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,sell,sellQty));}
+    if(requote){
+      const buyLevels=[],sellLevels=[];
+      for(const [offset,factor] of [[0.001,0.2],[0.003,0.5],[0.008,1],[0.015,1.5],[0.025,2]]){
+        const qty=Math.max(1,Math.floor(stock.liquidity*factor));
+        const buy=Math.min(high,Math.max(0.01,Math.max(low,round(center*(1-offset)))));
+        const sell=Math.min(high,Math.max(0.01,round(center*(1+offset))));
+        const buyCents=Math.round(buy*100);
+        const feeFor=q=>Math.ceil(buyCents*q*399/1000000);
+        let buyQty=Math.min(qty,Math.floor(remainingCash/buyCents));
+        while(buyQty>0&&buyCents*buyQty+feeFor(buyQty)>remainingCash)buyQty--;
+        const sellQty=Math.min(qty,remainingShares);
+        if(buyQty>0){const reserved=buyCents*buyQty+feeFor(buyQty);remainingCash-=reserved;totalCash=round(totalCash+reserved/100);buyLevels.push({price:buy,qty:buyQty});}
+        if(sellQty>0){remainingShares-=sellQty;reservedShares+=sellQty;sellLevels.push({price:sell,qty:sellQty});}
+      }
+      // In-place requote：沿用既有委託 id（保住時間優先），不足才補新單，多的撤掉。
+      const existing=(await db.prepare("SELECT id,side FROM orders WHERE account_id=? AND symbol=? AND status IN ('OPEN','PARTIAL') ORDER BY id").bind(BOT,stock.symbol).all()).results;
+      const bySide={BUY:existing.filter(o=>o.side==='BUY'),SELL:existing.filter(o=>o.side==='SELL')};
+      for(const side of ['BUY','SELL']){
+        const levels=side==='BUY'?buyLevels:sellLevels, rows=bySide[side];
+        for(let i=0;i<Math.max(levels.length,rows.length);i++){
+          const level=levels[i], row=rows[i];
+          if(level&&row)prepared.push(db.prepare('UPDATE orders SET price=?,shares=?,filled_shares=0 WHERE id=?').bind(level.price,level.qty,row.id));
+          else if(level)prepared.push(db.prepare("INSERT INTO orders(account_id,symbol,side,type,price,shares,status,fee_scheme) VALUES(?,? ,?,'LIMIT',?,?,'OPEN',1)").bind(BOT,stock.symbol,side,level.price,level.qty));
+          else if(row)prepared.push(db.prepare("UPDATE orders SET status='CANCELLED' WHERE id=?").bind(row.id));
+        }
+      }
+      prepared.push(db.prepare('UPDATE holdings SET frozen_shares=? WHERE account_id=? AND symbol=?').bind(reservedShares,BOT,stock.symbol));
     }
-    prepared.push(db.prepare('UPDATE holdings SET frozen_shares=? WHERE account_id=? AND symbol=?').bind(reservedShares,BOT,stock.symbol));
   }
-  prepared.push(db.prepare('UPDATE accounts SET frozen_cash=? WHERE id=?').bind(totalCash,BOT));
+  if(requote)prepared.push(db.prepare('UPDATE accounts SET frozen_cash=? WHERE id=?').bind(totalCash,BOT));
   // 六檔流動性加權指數（以當日參考價為基期 1000），每 tick 記一筆歷史供圖表。
   const indexSymbols=['2330','2317','2454','3711','YZU','YOUJIAN'];
   let base=0,cur=0;

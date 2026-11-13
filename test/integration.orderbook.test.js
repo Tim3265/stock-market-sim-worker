@@ -225,7 +225,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await get('/api/orderbook?symbol=YZU');
   await env.DB.prepare('UPDATE accounts SET cash=0,frozen_cash=0 WHERE id=1000000').run();
   await env.DB.prepare("UPDATE holdings SET shares=0,frozen_shares=0 WHERE account_id=1000000 AND symbol='YZU'").run();
-  await env.DB.prepare('UPDATE market_state SET last_tick_at=0').run();
+  await env.DB.prepare('UPDATE market_state SET tick_count=3,last_tick_at=0').run();
   const result=await get('/api/orderbook?symbol=YZU');
   expect(result.status).toBe(200);expect(result.body.bids).toEqual([]);expect(result.body.asks).toEqual([]);
  });
