@@ -87,13 +87,42 @@ export const PAGE_HTML = `<!DOCTYPE html>
   .stock-card .sym{color:var(--blue); font-size:10px;}
   .stock-card .name{font-size:13px; margin:4px 0;}
   .stock-card .price{font-size:18px;}
-  .stock-card .chg.up{color:var(--red);} .stock-card .chg.down{color:var(--green);}
+  .chg-pill{display:inline-block;margin-top:2px;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;color:#fff;}
+  .chg-pill.up{background:var(--red);} .chg-pill.down{background:var(--green);color:#08131f;}
+  .spark-btn{display:block;cursor:pointer;margin-top:4px;}
+  .rank{display:inline-block;min-width:22px;text-align:center;padding:1px 6px;border:2px solid var(--line);font-weight:700;}
+  .rank.r1{background:var(--gold);color:#14162b;border-color:#c8951a;}
+  .rank.r2{background:#c8d0e8;color:#14162b;border-color:#8a90b8;}
+  .rank.r3{background:#d2691e;color:#fff;border-color:#a0522d;}
+  #my-rank{position:sticky;bottom:8px;margin-top:10px;padding:10px 14px;font-size:13px;}
   .stock-card svg{width:100%; height:48px; display:block; margin-top:8px;}
   .stock-head{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
   .stock-head .nick{font-size:15px; font-weight:bold;}
   .stock-head .sym{margin-left:auto; color:var(--blue); font-size:10px;}
   .px-icon{display:inline-flex;}
   .px-icon svg{display:block; image-rendering:pixelated; shape-rendering:crispEdges;}
+  /* 像素 icon 動畫幀：每個幀用 steps(1) 切換 opacity */
+  @keyframes pxframe2330{0%,33.33%{opacity:1;}33.34%,66.66%{opacity:0;}66.67%,100%{opacity:0;}}
+  @keyframes pxframe2317{0%,33.33%{opacity:1;}33.34%,66.66%{opacity:0;}66.67%,100%{opacity:0;}}
+  @keyframes pxframe2454{0%,33.33%{opacity:1;}33.34%,66.66%{opacity:0;}66.67%,100%{opacity:0;}}
+  @keyframes pxframe3711{0%,33.33%{opacity:1;}33.34%,66.66%{opacity:0;}66.67%,100%{opacity:0;}}
+  @keyframes pxframeYZU{0%,33.33%{opacity:1;}33.34%,66.66%{opacity:0;}66.67%,100%{opacity:0;}}
+  @keyframes pxframeYOUJIAN{0%,33.33%{opacity:1;}33.34%,66.66%{opacity:0;}66.67%,100%{opacity:0;}}
+  @keyframes pxframeCOIN{0%,25%{opacity:1;}25.01%,50%{opacity:0;}50.01%,75%{opacity:0;}75.01%,100%{opacity:0;}}
+  .px-anim{position:relative;display:inline-flex;}
+  .px-anim>span{position:absolute;inset:0;}
+  /* 環境動畫：登入游標閃爍 */
+  .px-cursor{display:inline-block;width:10px;height:18px;background:var(--gold);vertical-align:-2px;margin-left:4px;animation:blink 1s steps(2) infinite;}
+  @keyframes blink{50%{opacity:0;}}
+  /* 環境動畫：價格變動閃爍（台股紅漲綠跌） */
+  .flash-up{animation:flashUp .4s steps(3);}
+  .flash-down{animation:flashDown .4s steps(3);}
+  @keyframes flashUp{0%{border-color:var(--red);box-shadow:0 0 12px var(--red);}100%{border-color:var(--line);box-shadow:6px 6px 0 rgba(0,0,0,.45);}}
+  @keyframes flashDown{0%{border-color:var(--green);box-shadow:0 0 12px var(--green);}100%{border-color:var(--line);box-shadow:6px 6px 0 rgba(0,0,0,.45);}}
+  /* 環境動畫：底部跑馬燈 */
+  .ticker-wrap{overflow:hidden;white-space:nowrap;border-top:2px solid var(--line);background:var(--panel);padding:6px 0;}
+  .ticker-inner{display:inline-block;animation:ticker 20s linear infinite;}
+  @keyframes ticker{0%{transform:translateX(100%);}100%{transform:translateX(-100%);}}
   #chart-modal{position:fixed; inset:0; background:rgba(4,6,14,.8); display:flex; align-items:center; justify-content:center; z-index:60;}
   #chart-modal .panel{width:min(880px,94vw); max-height:92vh; overflow:auto; padding:16px;}
   #k-canvas{width:100%; height:380px; display:block; background:#0b0e1a; border:2px solid var(--line); cursor:crosshair;}
@@ -101,7 +130,6 @@ export const PAGE_HTML = `<!DOCTYPE html>
   .stock-card.sel{border-color:var(--gold); box-shadow:6px 6px 0 rgba(0,0,0,.45), 0 0 0 2px var(--gold);}
   .stock-card .price{transition:color .6s;}
   .stock-card .price.flash-up{color:var(--red);} .stock-card .price.flash-down{color:var(--green);}
-  .stock-card .mini-stats{color:var(--dim); font-size:10px; margin-top:2px;}
   button{transition:transform .06s, box-shadow .06s, background .12s;}
   button:active{transform:translate(0,3px); box-shadow:none !important;}
   .ghost.active{background:var(--gold); color:#1a1a2e; box-shadow:0 var(--px) 0 #8a6d1a;}
@@ -124,7 +152,6 @@ export const PAGE_HTML = `<!DOCTYPE html>
     .stock-card{padding:10px;}
     .stock-card .price{font-size:16px;}
     .stock-head .nick{font-size:13px;}
-    .stock-card .mini-stats{font-size:9px;}
     nav.tabs button{padding:10px 12px; min-height:44px; font-size:13px; flex:1;}
     .panel{overflow-x:auto;}
     #order-form{gap:6px; padding:8px;}
@@ -163,7 +190,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
 
 <!-- 登入 -->
 <div id="login-screen">
-  <h1><span id="login-coin" class="px-icon" style="vertical-align:-4px"></span> 股市模擬大戶</h1>
+  <h1><span id="login-coin" class="px-icon" style="vertical-align:-4px"></span> 股市模擬大戶<span class="px-cursor"></span></h1>
   <div class="sub">PIXEL STOCK TRADER · 六檔虛擬市場 · 大樹證券 2.8 折</div>
   <div id="login-box" class="panel">
     <input id="nickname" maxlength="12" placeholder="輸入暱稱（可留空）">
@@ -207,7 +234,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     <section id="tab-market">
       <details class="panel" style="padding:8px 12px; margin-bottom:10px; font-size:13px"><summary style="cursor:pointer; color:var(--dim)">市場事件（進階）</summary><div id="events-bar" style="margin-top:8px"></div></details>
       <div id="stock-grid"></div>
-      <div style="color:var(--dim); font-size:11px; margin:8px 2px">單擊股票卡選擇下單 · 雙擊或點「走勢圖」開 K 線圖（十字線＋歷史成交）</div>
+      <div style="color:var(--dim); font-size:11px; margin:8px 2px">單擊股票卡選擇下單 · 點卡片迷你走勢或雙擊開 K 線圖（十字線＋歷史成交）</div>
       <div id="stock-detail" class="panel hidden">
         <h2 id="detail-title"></h2>
         <svg id="detail-chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
@@ -248,8 +275,9 @@ export const PAGE_HTML = `<!DOCTYPE html>
 
     <section id="tab-leaderboard" class="hidden">
       <div class="panel" style="padding:16px">
-        <div class="section-title">大戶排行榜（總資產）</div>
+        <div class="section-title">台灣股神大戶榜（總資產，真人玩家）</div>
         <table id="lb-table"><thead><tr><th>#</th><th>玩家</th><th>總資產</th></tr></thead><tbody></tbody></table>
+        <div id="my-rank" class="panel"></div>
       </div>
     </section>
 
@@ -294,12 +322,25 @@ export const PAGE_HTML = `<!DOCTYPE html>
       </details>
     </div>
   </div>
+  <div class="ticker-wrap"><div class="ticker-inner" id="ticker-inner"></div></div>
   <footer>股市模擬大戶 · Cloudflare Workers + D1 · 有人瀏覽時市場每 15 秒推進一輪</footer>
 </div>
 
 <script>
 const $=s=>document.querySelector(s);
 const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:2});
+// SQLite 存 UTC 字串；這裡轉成玩家本地時間（台灣 UTC+8）。一小時內顯示相對時間，今天顯示 HH:MM:SS，跨日顯示 MM/DD HH:MM
+function fmtTime(utc){
+  if(!utc)return '-';
+  const d=new Date(utc.replace(' ','T')+'Z'); if(isNaN(d))return utc;
+  const now=new Date(); const diff=(now-d)/1000;
+  if(diff<15)return '剛剛';
+  if(diff<60)return Math.floor(diff)+' 秒前';
+  if(diff<3600)return Math.floor(diff/60)+' 分鐘前';
+  const p=n=>String(n).padStart(2,'0');
+  if(d.toDateString()===now.toDateString())return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+  return p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
 const pct=(a,b)=>b?((a-b)/b*100):0;
 let state=null, selected='2330', tab='market', timer=null, prevPrices={};
 
@@ -332,25 +373,67 @@ $('#btn-play').onclick=login;
 $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 
 function tick(){if(!document.hidden)poll();else timer=setTimeout(tick,1000);}
-// ---- 像素風 icon：16x16 字格，每個字元對應一種顏色 ----'
-const PX_PAL={K:'#ffd23f',k:'#c8951a',D:'#2b3a67',c:'#4db2ff',B:'#123a6d',b:'#1e5aa8',r:'#ff5470',R:'#c22434',G:'#3ddc78',g:'#9aa7bd',w:'#e8ecf5',O:'#ff9f2e',m:'#dfe6f5'};
+// ---- 像素風 icon v2：16x16 字格，每個字元對應一種顏色，含動畫幀 ----
+// 台股慣例：紅漲綠跌。RED=#ff5470 (up), GREEN=#3ddc78 (down)
+const PX_PAL={K:'#14162b',k:'#3a3f5c',w:'#f4f7ff',g:'#8a90b8',G:'#c8d0e8',Y:'#ffd23f',y:'#c8951a',O:'#ff9f2e',o:'#d2691e',R:'#ff5470',r:'#c22434',E:'#3ddc78',e:'#1d9e52',B:'#4db2ff',b:'#1e5aa8',D:'#2b3a67',d:'#16204a',C:'#4dd0e1',P:'#b388ff',M:'#ff8a65'};
+// 每檔股票的基礎幀（frame 0）+ 動畫幀（frame 1..n）
 const PX_ICONS={
- '2330':['................','...g...g...g....','...g...g...g....','..DDDDDDDDDD....','..DccccccccD....','..DcKKKKKKcD....','..DcKccccKcD....','..DcKccccKcD....','..DcKKKKKKcD....','..DccccccccD....','..DDDDDDDDDD....','...g...g...g....','...g...g...g....','................','................','................'],
- '2317':['................','................','................','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr'],
- '2454':['................','.......GG.......','......GGG.......','.....GGG........','....GGGG........','...GGGGGG.......','....GGGGG.......','.....GGGG.......','......GGG.......','.....GGG........','....GGG.........','...GGG..........','..GGG...........','..GG............','................','................'],
- '3711':['................','..KKK.....mmm...','.KkkK...mwwm....','.KkkK...mwwm....','..KKK.....mmm...','................','.bb..bb..bb..bb.','bbbbbbbbbbbbbbbb','.bb..bb..bb..bb.','bbbbbbbbbbbbbbbb','.bb..bb..bb..bb.','................','................','................','................','................'],
- 'YZU':['................','................','.......cc.......','.....cccc.......','...cccccc.......','..cccccc........','.cccccc.........','cccccc....bb....','.cccc...bb......','..ccc..bb.......','...cc...........','....c...........','................','................','................','................'],
- 'YOUJIAN':['................','.....gggg.......','....gggggg......','....gwgggg......','....gggggg......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....gggggg......','.....gggg.......','................','................','................'],
- COIN:['................','....kkkkkk......','..kkKKKKKKkk....','.kKKkkKKKKKKk...','.kKkKkkKKKkKk...','.kKkKKKKKKkKk...','.kKkKkkKKKkKk...','.kKKkkKKKKKKk...','..kkKKKKKKkk....','....kkkkkk......','................','................','................','................','................','................']
+ '2330':{pal:{K:'#14162b',D:'#2b3a67',G:'#c8d0e8',Y:'#ffd23f',w:'#f4f7ff'},frames:[
+  ['................','....KKKKKKKK....','..KKDDDDDDDDKK..','.KYDDDDDDDDDDYK.','KYKDDKKKKKKDDKYK','KYKDDKGGGGKDDKYK','KYKDDKGGGGKDDKYK','KYKDDKGGGGKDDKYK','KYKDDKGGGGKDDKYK','KYKDDKKKKKKDDKYK','.KYDDDDDDDDDDYK.','..KKDDDDDDDDKK..','....KKKKKKKK....','................','................','................'],
+  ['................','....KKKKKKKK....','..KKDDDDDDDDKK..','.KYDDDDDDDDDDYK.','KYKDDKKKKKKDDKYK','KYKDDKwwwwKDDKYK','KYKDDKwwwwKDDKYK','KYKDDKwwwwKDDKYK','KYKDDKwwwwKDDKYK','KYKDDKKKKKKDDKYK','.KYDDDDDDDDDDYK.','..KKDDDDDDDDKK..','....KKKKKKKK....','................','................','................'],
+  ['................','....KKKKKKKK....','..KKDDDDDDDDKK..','.KYDDDDDDDDDDYK.','wYKDDKKKKKKDDKYw','wYKDDKGGGGKDDKYw','wYKDDKGGGGKDDKYw','wYKDDKGGGGKDDKYw','wYKDDKGGGGKDDKYw','wYKDDKKKKKKDDKYw','.KYDDDDDDDDDDYK.','..KKDDDDDDDDKK..','....KKKKKKKK....','................','................','................']]},
+ '2317':{pal:{R:'#ff5470',r:'#c22434',w:'#f4f7ff'},frames:[
+  ['................','................','................','................','................','..RRR...RRR.....','.RwRRR.RwRRR....','RRRRRRRRRRRRRR..','.rrrrrrrrrrrr...','..RRR...RRR.....','.RwRRR.RwRRR....','RRRRRRRRRRRRRR..','.rrrrrrrrrrrr...','................','................','................'],
+  ['................','................','................','................','................','...RRR...RRR....','..RwRRR.RwRRR...','.RRRRRRRRRRRRRR.','..rrrrrrrrrrrr..','...RRR...RRR....','..RwRRR.RwRRR...','.RRRRRRRRRRRRRR.','..rrrrrrrrrrrr..','................','................','................'],
+  ['................','................','................','................','................','.RRR...RRR......','RwRRR.RwRRR.....','RRRRRRRRRRRRR...','rrrrrrrrrrrr....','.RRR...RRR......','RwRRR.RwRRR.....','RRRRRRRRRRRRR...','rrrrrrrrrrrr....','................','................','................']]},
+ '2454':{pal:{Y:'#ffd23f',y:'#c8951a',w:'#f4f7ff',K:'#14162b'},frames:[
+  ['................','......YYYK......','.....YYYK.......','....YYYK........','...YYYYK........','..YYYYYYYK......','....YYYK........','...YYYK.........','..YYYK..........','.YYYK...........','YYYK............','.YYK............','................','................','................','................'],
+  ['................','......YYwK......','.....YYwYK......','....YYwYK.......','...YYYwYK.......','..YYwYYYYK......','....YYYK........','...YYYK.........','..YYYK..........','.YYYK...........','YYYK............','.YYK............','................','................','................','................'],
+  ['................','......YYYK......','.....YYYK.......','....YYYK........','...YYYYK........','..YYYYYYYK......','....YYwK........','...YYwK.........','..YYwK..........','.YYwK...........','YYwK............','.YwK............','................','................','................','................']]},
+ '3711':{pal:{O:'#ff9f2e',Y:'#ffd23f',m:'#c8d0e8',w:'#f4f7ff',b:'#1e5aa8',B:'#4db2ff',K:'#14162b'},frames:[
+  ['................','...O.O....mm....','..OYYYO..mwwm...','.OYYYYYOm.mwwm..','..OYYYO..mmmm...','...O.O....mm....','................','................','..bb..bb..bb....','bbbbbbbbbbbbbb..','.bb..bb..bb..bb.','bbbbbbbbbbbbbb..','.bb..bb..bb..bb.','................','................','................'],
+  ['................','...Y.Y....mm....','..OYYYO..mwwm...','.OYYYYYOm.mwwm..','..OYYYO..mmmm...','...Y.Y....mm....','................','................','...bb..bb..bb...','.bbbbbbbbbbbbbb.','..bb..bb..bb..bb','.bbbbbbbbbbbbbb.','..bb..bb..bb..bb','................','................','................'],
+  ['................','...O.O....ww....','..OYYYO..mwwm...','.OYYYYYOm.mwwm..','..OYYYO..mwww...','...O.O....ww....','................','................','..bb..bb..bb....','bbbbbbbbbbbbbb..','.bb..bb..bb..bb.','bbbbbbbbbbbbbb..','.bb..bb..bb..bb.','................','................','................']]},
+ 'YZU':{pal:{B:'#4db2ff',b:'#1e5aa8',w:'#f4f7ff',K:'#14162b'},frames:[
+  ['................','................','................','................','................','................','................','..........BB....','........BBwB....','......BBBBBB....','..BBBBBBBB......','.BBBB....BB.....','BBB....BB.......','.BB...BB........','..BB............','................'],
+  ['................','................','..........BB....','........BBwB....','......BBBBBB....','....BBBBBB......','..BBBBBB........','.BBBB....BB.....','BBB....BB.......','.BB...BB........','..BB.BB.........','...BB...........','................','................','................','................'],
+  ['................','..........BB....','........BBwB....','......BBBBBB....','....BBBBBB......','..BBBBBB........','.BBBB....BB.....','BBB....BB.......','.BB...BB........','..BB.BB.........','...BB...........','................','................','................','................','................']]},
+ 'YOUJIAN':{pal:{K:'#14162b',g:'#8a90b8',G:'#c8d0e8',w:'#f4f7ff',R:'#ff5470'},frames:[
+  ['................','................','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','KGGGGKGGGGGGGK..','KGGGGKwwKGGGGK..','KGGGGKKKKGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................'],
+  ['................','................','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','KGGGGKGGGGGGGK..','KGGGGKKKKGGGGK..','KGGGGKwwKGGGGK..','KGGGGKGGGGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................'],
+  ['................','................','....KKKKKK......','..KKGGGGGGKK....','.KGGGGGGGGGGK...','KGGGGKGGGGGGGK..','KGGGGRwwKGGGGK..','KGGGGKKKKGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','KGGGGGGGGGGGGK..','.KGGGGGGGGGGK...','..KKGGGGGGKK....','....KKKKKK......','................','................']]},
+ COIN:{pal:{K:'#14162b',Y:'#ffd23f',y:'#c8951a',w:'#f4f7ff'},frames:[
+  ['................','................','....KKKKKK......','..KYYYYYYYK.....','.KYYKYYKYYYK....','KYYKYYKKYYYK....','KYYKYYYYYYYK....','KYYKKYYKKYYK....','KYYKYYYYYYYK....','KYYKYYKKYYYK....','.KYYKYYKYYYK....','..KYYYYYYYK.....','....KKKKKK......','................','................','................'],
+  ['................','................','......KK........','.....KYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','....KYYYK.......','.....KYYK.......','......KK........','................','................','................'],
+  ['................','................','....KKKKKK......','..KYYYYYYYK.....','.KYYYYYYYYYK....','KYYYYYYYYYYYK...','KYYYYYYYYYYYK...','KYYYYYYYYYYYK...','KYYYYYYYYYYYK...','KYYYYYYYYYYYK...','.KYYYYYYYYYK....','..KYYYYYYYK.....','....KKKKKK......','................','................','................'],
+  ['................','................','........KK......','.......KYYK.....','.......KYYYK....','.......KYYYK....','.......KYYYK....','.......KYYYK....','.......KYYYK....','.......KYYYK....','.......KYYYK....','.......KYYK.....','........KK......','................','................','................']]}
 };
-function pxIcon(name,size){
-  const grid=(PX_ICONS[name]||PX_ICONS.COIN).map(r=>r.padEnd(16,'.'));
+// 渲染單幀 SVG。frameIdx 省略時回傳基礎幀。
+function pxIcon(name,size,frameIdx){
+  const def=PX_ICONS[name]||PX_ICONS.COIN;
+  const frames=def.frames||[def];
+  const grid=(frames[frameIdx||0]||frames[0]).map(r=>r.padEnd(16,'.'));
+  const pal=def.pal||PX_PAL;
   const cell=size/16; let rects='';
-  grid.forEach((row,y)=>{for(let x=0;x<16;x++){const col=PX_PAL[row[x]];if(col)rects+='<rect x="'+(x*cell).toFixed(2)+'" y="'+(y*cell).toFixed(2)+'" width="'+cell.toFixed(2)+'" height="'+cell.toFixed(2)+'" fill="'+col+'"/>';}});
-  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" shape-rendering="crispEdges">'+rects+'</svg>';
+  grid.forEach((row,y)=>{for(let x=0;x<16;x++){const col=pal[row[x]];if(col)rects+='<rect x="'+(x*cell).toFixed(2)+'" y="'+(y*cell).toFixed(2)+'" width="'+cell.toFixed(2)+'" height="'+cell.toFixed(2)+'" fill="'+col+'"/>';}});
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" shape-rendering="crispEdges" style="image-rendering:pixelated">'+rects+'</svg>';
 }
-
-const PX_NAMES={'2330':'台積電 晶圓代工','2317':'鴻海 紅海','2454':'聯發科 發哥','3711':'日月光投控 日月潭','YZU':'元智大學 海豚','YOUJIAN':'右鍵 滑鼠'};
+// 動畫版 icon：用 CSS steps() 循環播放所有幀。回傳包一層 span + 內嵌 style。
+function pxIconAnim(name,size){
+  const def=PX_ICONS[name]||PX_ICONS.COIN;
+  const n=def.frames.length;
+  const dur=(n*0.18).toFixed(2);
+  let framesSvg='';
+  def.frames.forEach((f,i)=>{framesSvg+=pxIcon(name,size,i);});
+  // 用多個 absolutely 疊放的 svg + CSS animation 控制顯示哪一幀
+  let layers='';
+  def.frames.forEach((_,i)=>{
+    const delay=(-i*0.18).toFixed(2);
+    layers+='<span style="position:absolute;inset:0;animation:pxframe'+name+' '+dur+'s steps(1) infinite;animation-delay:'+delay+'s;opacity:'+(i===0?1:0)+'" class="pxlayer">'+pxIcon(name,size,i)+'</span>';
+  });
+  return '<span style="position:relative;display:inline-flex;width:'+size+'px;height:'+size+'px">'+layers+'</span>';
+}
+const PX_NAMES={'2330':'台積電 GG 晶圓','2317':'鴻海 紅海','2454':'聯發科 發哥','3711':'日月光投控 日月潭','YZU':'元智大學 元智AI海豚','YOUJIAN':'右鍵 滑鼠'};
 
 // ---- 走勢圖（雙擊股票卡開啟）：折線/K線切換、縮放平移、時間範圍、十字線 ----
 let kCandles=[], kHover=-1, kMouseY=null, kLayout=null, kReq=0, kDrag=null;
@@ -377,7 +460,7 @@ async function openChart(sym){
   if(!h||!h.ok){$('#k-info').textContent='載入失敗';return;}
   kCandles=buildCandles(h.history,h.fills||[]); kHover=-1; kMouseY=null; kDrag=null;
   setRange(kRange);
-  $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+f.created_at+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+f.buyer_name+'</td><td>'+f.seller_name+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
+  $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+f.buyer_name+'</td><td>'+f.seller_name+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
   drawChart();
 }
 function closeChart(){$('#chart-modal').classList.add('hidden'); document.body.style.overflow='';}
@@ -558,23 +641,23 @@ function renderMarket(){
   grid.innerHTML=state.stocks.map(s=>{
     const hist=state.histories[s.symbol]||[];
     const vals=hist.map(p=>Number(p.price));
-    const hi=vals.length?Math.max(...vals):s.price, lo=vals.length?Math.min(...vals):s.price;
     const chg=pct(s.price,s.ref_price);
     const cls=chg>=0?'up':'down';
     const color=chg>=0?'var(--red)':'var(--green)';
     const prev=prevPrices[s.symbol]; let flash='';
     if(prev!=null&&prev!==s.price)flash=s.price>prev?' flash-up':' flash-down';
     prevPrices[s.symbol]=s.price;
-    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 雙擊或點「走勢圖」開圖">'
-      +'<div class="stock-head" title="'+(PX_NAMES[s.symbol]||s.name)+'">'+pxIcon(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
+    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 點迷你走勢開圖">'
+      +'<div class="stock-head" title="'+(PX_NAMES[s.symbol]||s.name)+'">'+pxIconAnim(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
       +'<div class="price'+flash+'">$'+fmt(s.price)+'</div>'
-      +'<div class="chg '+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</div>'
-      +'<div class="mini-stats">高 $'+fmt(hi)+' · 低 $'+fmt(lo)+'</div>'
-      +sparkline(hist,200,48,color)
-      +'<button class="ghost k-btn" style="margin-top:6px; padding:6px 10px; font-size:12px; min-height:32px">走勢圖</button>'
+      +'<div class="chg-pill '+cls+'">'+(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(s.price-s.ref_price))+' ('+(chg>=0?'+':'')+chg.toFixed(2)+'%)</div>'
+      +'<span class="spark-btn" title="點開 K 線圖">'+sparkline(hist,200,48,color)+'</span>'
       +'</div>';
   }).join('');
-  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);const kb=c.querySelector('.k-btn');if(kb)kb.onclick=e=>{e.stopPropagation();openChart(c.dataset.sym);};}); // 單擊選擇下單，雙擊或點「走勢圖」開圖
+  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);const sb=c.querySelector('.spark-btn');if(sb)sb.onclick=e=>{e.stopPropagation();openChart(c.dataset.sym);};}); // 單擊選擇下單，點迷你走勢或雙擊開圖
+  // 底部跑馬燈：顯示所有股票價格（紅漲綠跌）
+  const tk=$('#ticker-inner');
+  if(tk)tk.innerHTML=state.stocks.map(s=>{const chg=pct(s.price,s.ref_price);const cls=chg>=0?'color:var(--red)':'color:var(--green)';return '<span style="margin:0 18px"><b>'+s.symbol+'</b> <span style="'+cls+'">$'+fmt(s.price)+'</span> <span style="'+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span></span>';}).join('');
   renderDetail();
 }
 
@@ -660,7 +743,7 @@ function renderPortfolio(){
   const hb=$('#holdings-table tbody');
   hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+h.symbol+' '+(h.nickname||h.name)+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>$'+fmt(h.market_value)+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--dim)">無持股</td></tr>';
   const tb=$('#trades-table tbody');
-  tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+t.created_at+'</td><td>'+t.symbol+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無交易紀錄</td></tr>';
+  tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+fmtTime(t.created_at)+'</td><td>'+t.symbol+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無交易紀錄</td></tr>';
 }
 
 function renderOrders(){
@@ -672,12 +755,20 @@ function renderOrders(){
 
 function renderFills(){
   const fb=$('#fills-table tbody');
-  fb.innerHTML=(state.fills||[]).slice(0,30).map(f=>'<tr><td>'+f.created_at+'</td><td>'+f.symbol+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>'+f.buyer_name+(f.buyer_is_bot?' 🤖':'')+'</td><td>'+f.seller_name+(f.seller_is_bot?' 🤖':'')+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無成交</td></tr>';
+  fb.innerHTML=(state.fills||[]).slice(0,30).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.symbol+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>'+f.buyer_name+(f.buyer_is_bot?' 🤖':'')+'</td><td>'+f.seller_name+(f.seller_is_bot?' 🤖':'')+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無成交</td></tr>';
 }
 
 async function renderLeaderboard(){
   const r=await api('/api/leaderboard');
-  $('#lb-table tbody').innerHTML=(r.players||[]).map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+p.username+(p.is_bot?' <span style="color:var(--dim)">[BOT]</span>':'')+'</td><td>$'+fmt(p.total_assets)+'</td></tr>').join('');
+  const me=state.account&&state.account.name;
+  $('#lb-table tbody').innerHTML=(r.players||[]).map((p,i)=>{
+    const rank=i<3?'<span class="rank r'+(i+1)+'">'+(i+1)+'</span>':'<span class="rank">'+(i+1)+'</span>';
+    const mine=me&&p.username===me?' style="background:rgba(255,210,63,.12)"':'';
+    return '<tr'+mine+'><td>'+rank+'</td><td>'+p.username+'</td><td>$'+fmt(p.total_assets)+'</td></tr>';
+  }).join('');
+  const myIdx=(r.players||[]).findIndex(p=>p.username===me);
+  const bar=$('#my-rank');
+  if(bar)bar.innerHTML=myIdx>=0?('我的排名 <b>#'+(myIdx+1)+'</b> ｜ '+me+' ｜ 總資產 <b>$'+fmt(r.players[myIdx].total_assets)+'</b>'):'';
 }
 
 async function renderBots(){
@@ -691,7 +782,7 @@ async function renderBots(){
 }
 
 // 瀏覽器記得登入狀態（session cookie 有效）時，重新整理直接進入同一帳號
-$('#login-coin').innerHTML=pxIcon('COIN',22);
+$('#login-coin').innerHTML=pxIconAnim('COIN',22);
 api('/api/auth/session').then(r=>{if(r.ok){$('#login-screen').classList.add('hidden');$('#app').classList.remove('hidden');start();}});
 </script>
 </body>

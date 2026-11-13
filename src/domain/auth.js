@@ -61,13 +61,21 @@ export async function marketInitialCash(db) {
 
 export async function guestLogin(db, nickname) {
  await db.prepare('DELETE FROM player_sessions WHERE expires_at<=?').bind(Date.now()).run();
- const rand = Math.floor(1000 + Math.random() * 9000);
- const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 12) : '大戶_' + rand;
- const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '') || ('Whale_' + rand);
+const GUEST_BASES=['阿財','股神','韭菜','大戶','散戶','水手','菜雞','金主','營業員','巴菲特','航海王','少年董','抄底王','當沖哥','佛系股神'];
+const GUEST_PREFIXES=['少年','抄底','隔日沖','滿手','無敵','佛系','永和','信義區'];
+function guestCandidate(){
+  const b=GUEST_BASES[Math.floor(Math.random()*GUEST_BASES.length)];
+  const p=Math.random()<0.35?GUEST_PREFIXES[Math.floor(Math.random()*GUEST_PREFIXES.length)]:'';
+  return (p+b).slice(0,5);
+}
+ const cleanNick = (typeof nickname === 'string' && nickname.trim()) ? nickname.trim().slice(0, 5) : '';
+ const baseName = cleanNick.replace(/[^a-zA-Z0-9_一-龥]/g, '');
  const initialCash = await marketInitialCash(db);
  let username, id;
- for (let attempt = 0; attempt < 5; attempt++) {
-  username = baseName.slice(0, 7) + '_' + randomHex(2);
+ for (let attempt = 0; attempt < 8; attempt++) {
+  if (attempt === 0 && baseName) username = baseName;
+  else if (attempt < 5) username = guestCandidate();
+  else username = GUEST_BASES[Math.floor(Math.random()*GUEST_BASES.length)].slice(0,3) + (1 + Math.floor(Math.random()*99));
   const salt = randomHex(16), hash = await derive(randomHex(16), salt);
   id = await newAccountId(db);
   try {
@@ -76,7 +84,7 @@ export async function guestLogin(db, nickname) {
     db.prepare('INSERT INTO player_credentials(account_id,username,password_salt,password_hash) VALUES(?,?,?,?)').bind(id, username, salt, hash)
    ]);
    break;
-  } catch (e) { if (attempt === 4) throw e; } // username UNIQUE 碰撞時換後綴重試
+  } catch (e) { if (attempt === 7) throw e; } // username UNIQUE 碰撞時換名重試
  }
  const token = randomHex(32), tokenHash = await digest(token), expires = Date.now() + 7 * 86400000;
  await db.prepare('INSERT INTO player_sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').bind(tokenHash, id, expires).run();
