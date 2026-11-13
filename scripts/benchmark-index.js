@@ -7,9 +7,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const DIR = join(ROOT, '.local-benchmark');
+const DIR = join(ROOT, '.local-benchmark-' + process.pid); // 每次執行用唯一目錄，避免舊檔鎖定導致刪除失敗
 const DB = 'benchmark';
-rmSync(DIR, { recursive: true, force: true });
+try { rmSync(DIR, { recursive: true, force: true }); } catch { /* 目錄不存在或鎖定時忽略 */ }
 mkdirSync(DIR, { recursive: true });
 
 const WRANGLER = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -74,4 +74,4 @@ const report = `# 索引實驗報告（10 萬筆成交資料）
 重跑：\`node scripts/benchmark-index.js\`（使用獨立暫存資料庫 .local-benchmark，不影響正式資料）。
 `;
 console.log(report);
-rmSync(DIR, { recursive: true, force: true });
+try { rmSync(DIR, { recursive: true, force: true }); } catch { /* 目錄不存在或鎖定時忽略 */ }
