@@ -112,7 +112,7 @@ async function route(request, env) {
       trades = await queries.listTrades(env.DB, session.account_id, 30, 0, {side: tradeSide});
     }
     const bookResult = await book(env.DB, symbol);
-    const fills = (await env.DB.prepare(`
+    const fills = upgraded ? (await env.DB.prepare(`
       SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
              b.name as buyer_name, b.is_bot as buyer_is_bot,
              se.name as seller_name, se.is_bot as seller_is_bot
@@ -121,14 +121,14 @@ async function route(request, env) {
       JOIN accounts b ON b.id = f.buyer_id
       JOIN accounts se ON se.id = f.seller_id
       ORDER BY f.id DESC LIMIT 60
-    `).all()).results;
+    `).all()).results : [];
     const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
-    const queriesList = stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 100").bind(sym));
+    const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 100").bind(sym)) : [];
     const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
     const index = upgraded ? await computeIndex(env.DB) : null;
     const events = getActiveEvents(state?.tick_count || 0);
-    const histories = Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()]));
+    const histories = upgraded ? Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()])) : {};
     return ok({
       stocks,
       account,
@@ -155,7 +155,7 @@ async function route(request, env) {
     return ok({ events: getActiveEvents(state?.tick_count || 0) });
   }
   if (path === '/api/market-activity' && request.method === 'GET') {
-    const fills = (await env.DB.prepare(`
+    const fills = upgraded ? (await env.DB.prepare(`
       SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
              b.name as buyer_name, b.is_bot as buyer_is_bot,
              se.name as seller_name, se.is_bot as seller_is_bot
@@ -164,7 +164,7 @@ async function route(request, env) {
       JOIN accounts b ON b.id = f.buyer_id
       JOIN accounts se ON se.id = f.seller_id
       ORDER BY f.id DESC LIMIT 60
-    `).all()).results;
+    `).all()).results : [];
     return ok({ fills });
   }
   if (path === '/api/tick' && request.method === 'POST') {

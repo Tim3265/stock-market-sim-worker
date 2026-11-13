@@ -64,6 +64,8 @@
 
 關鍵設計：**機器人也是 `accounts` 的一列**，`is_bot = 1`。
 
+> 註：「散戶雜訊」委託寄生於 1000001（動能派）帳戶發送；「巨鯨波動」寄生於 1000002（價值派）帳戶，共用資金與持股池。
+
 ```
 accounts
   ├─ id=10000000+  玩家（隨機配發）  is_bot = 0
@@ -185,8 +187,8 @@ change    = drift + noise
 | 造市商 | 每 tick | 取消自己所有掛單 → 以中價為中心重掛 5 層買賣單 |
 | 動能派 | 每 6 tick | 近 5 筆成交價連漲 > 2% → 市價買；連跌 > 2% → 市價賣 |
 | 價值派 | 每 10 tick | `price < fair × 0.97` → 限價買；`price > fair × 1.03` → 限價賣 |
-| 散戶雜訊 | 每奇數 tick | 對隨機一檔市價買／賣 35～89 股 |
-| 巨鯨波動 | 每 5 tick | 對隨機一檔市價買／賣 40～89 股 |
+| 散戶雜訊 | 每奇數 tick | 對隨機一檔市價買／賣 35～79 股 |
+| 巨鯨波動 | 每 5 tick | 對隨機一檔市價買／賣 40～85 股 |
 | 恐慌賣壓 | 每 tick 0.5% 機率 | 進入恐慌 5 個 tick，每 tick 市價賣出持股的 20% |
 
 機器人也有現金與持股，**不能超賣、不能透支**。
@@ -364,7 +366,7 @@ SELECT ... FROM trades WHERE account_id = ? ORDER BY id DESC LIMIT ? OFFSET ?
 - `type IN ('MARKET','LIMIT')`
 - `status IN ('OPEN','PARTIAL','FILLED','CANCELLED')`
 - CHECK：`(type='LIMIT' AND price IS NOT NULL AND price > 0) OR type='MARKET'`（市價單 price 允許為 NULL）
-- 所有 `account_id`、`symbol`、`order_id` 都有 FK
+- 所有 `account_id`、`symbol`、`order_id`、`maker_order_id`、`taker_order_id`、`buyer_id`、`seller_id` 都有 FK
 
 **Trigger（資料庫層的最後防線）**
 
@@ -543,7 +545,8 @@ UPDATE market_state
 `POST /api/orders`
 
 ```json
-{ "account_id": 1, "symbol": "YZU", "side": "BUY", "type": "LIMIT", "price": 45.5, "shares": 100 }
+{ "symbol": "YZU", "side": "BUY", "type": "LIMIT", "price": 45.5, "shares": 100 }
+（`account_id` 以 session 為準，body 內帶入會被忽略）
 ```
 
 成功回應：

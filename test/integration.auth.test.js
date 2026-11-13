@@ -7,6 +7,19 @@ async function create(name){
  const registration=await post('/api/auth/register',{username:name,password:'valid-pass-123'});expect(registration.status).toBe(200);
  const login=await post('/api/auth/login',{username:name,password:'valid-pass-123'});expect(login.status).toBe(200);return login.headers.get('Set-Cookie').split(';')[0];
 }
+it('recharge 在 CAS 重試耗盡時回傳 409 CONFLICT',async()=>{
+ const login=await post('/api/auth/guest',{nickname:'conflict-user'});
+ const cookie=login.headers.get('Set-Cookie').split(';')[0];
+ await env.DB.exec("CREATE TRIGGER force_conflict BEFORE UPDATE ON market_state BEGIN SELECT RAISE(ABORT, 'market_revision_guard'); END;");
+ try{
+  const res=await post('/api/account/recharge',{},cookie);
+  expect(res.status).toBe(409);
+  expect((await res.json()).code).toBe('CONFLICT');
+ }finally{
+  await env.DB.exec('DROP TRIGGER IF EXISTS force_conflict;');
+ }
+});
+
 it('allows repeated guest logins with the same nickname',async()=>{
  const a=await post('/api/auth/guest',{nickname:'guest'}),b=await post('/api/auth/guest',{nickname:'guest'});
  expect(a.status).toBe(200);expect(b.status).toBe(200);
