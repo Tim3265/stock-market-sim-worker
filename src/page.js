@@ -8,7 +8,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>股市模擬大戶 — PIXEL Trader</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0d0f1a; --panel:#171a2b; --panel2:#1f2338; --line:#2e3352;
@@ -25,7 +25,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     background-size:32px 32px;
     color:var(--txt);
     font-family:'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
-    font-size:14px; line-height:1.7;
+    font-size:14px; line-height:1.7; font-variant-numeric:tabular-nums;
   }
   .hidden{display:none !important;}
   button,input{font-family:inherit; font-size:14px;}
@@ -48,10 +48,11 @@ export const PAGE_HTML = `<!DOCTYPE html>
     min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:24px; text-align:center; padding:24px;
   }
-  #login-screen h1{font-family:'Press Start 2P', monospace;
-    font-size:clamp(22px,5vw,44px); color:var(--gold);
+  #login-screen h1{font-family:'Noto Sans TC',sans-serif; font-weight:900;
+    font-size:clamp(30px,8vw,52px); color:var(--gold); line-height:1.25; letter-spacing:3px;
     text-shadow:4px 4px 0 #b8860b, 8px 8px 0 rgba(0,0,0,.5);
   }
+  .px-latin{font-family:'Press Start 2P',monospace; letter-spacing:1px;}
   #login-screen .sub{color:var(--dim); font-size:11px;}
   #login-box{width:min(420px,92vw); padding:24px; display:flex; flex-direction:column; gap:14px;}
   #login-box .hint{color:var(--dim); font-size:10px;}
@@ -68,11 +69,11 @@ export const PAGE_HTML = `<!DOCTYPE html>
     padding:10px 0; display:flex; flex-direction:column; gap:8px;
     border-bottom:2px solid var(--line);
   }
-  header .logo{color:var(--gold); font-size:14px; text-shadow:2px 2px 0 #b8860b; font-family:'Press Start 2P', monospace;}
-  #index-chip{display:flex; align-items:center; gap:10px; padding:6px 12px; background:var(--panel2); border:2px solid var(--line);}
+  header .logo{color:var(--gold); font-size:17px; font-weight:900; letter-spacing:1px; text-shadow:2px 2px 0 #b8860b; line-height:1; display:flex; align-items:center; gap:7px;}
+  #index-chip{display:flex; align-items:center; gap:10px; padding:6px 12px; background:var(--panel2); border:2px solid var(--line); line-height:1.2;}
   #index-chip .up{color:var(--red);} #index-chip .down{color:var(--green);}
   header .spacer{flex:1;}
-  #cash-chip{color:var(--green);}
+  #cash-chip{color:var(--green); line-height:1.2; display:flex; align-items:center; gap:6px;}
   main{max-width:1200px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:16px;}
 
   nav.tabs{display:flex; gap:8px; flex-wrap:wrap;}
@@ -116,6 +117,24 @@ export const PAGE_HTML = `<!DOCTYPE html>
     .book-wrap{grid-template-columns:1fr;}
     input{font-size:16px;} /* iOS 聚焦時會自動放大，字級小於 16px 會造成畫面跳動 */
     button{touch-action:manipulation;} /* 手機點擊不延遲 */
+    main{padding:10px; gap:10px;}
+    header{gap:8px; padding:10px 12px;}
+    header .logo{font-size:14px;}
+    #stock-grid{grid-template-columns:repeat(2,1fr); gap:8px;}
+    .stock-card{padding:10px;}
+    .stock-card .price{font-size:16px;}
+    .stock-head .nick{font-size:13px;}
+    .stock-card .mini-stats{font-size:9px;}
+    nav.tabs button{padding:10px 12px; min-height:44px; font-size:13px; flex:1;}
+    .panel{overflow-x:auto;}
+    #order-form{gap:6px; padding:8px;}
+    #order-form input{flex:1; min-width:80px; width:auto;}
+    #order-form button{flex:1; min-height:44px;}
+    #chart-modal{padding:0; align-items:stretch;}
+    #chart-modal .panel{width:100vw; max-height:100vh; border-left:0; border-right:0; padding:12px;}
+    #k-canvas{height:auto; aspect-ratio:840/380;}
+    table{font-size:12px;}
+    #stock-detail{padding:12px;}
   }
   .book-col h3{font-size:11px; margin-bottom:8px; color:var(--dim);}
   .book-row{display:flex; justify-content:space-between; padding:3px 6px; font-size:11px;}
@@ -156,7 +175,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
 <!-- 主畫面 -->
 <div id="app" class="hidden">
   <header>
-    <span class="logo">▚▞ 股市模擬大戶</span>
+    <span class="logo"><span class="px-latin" style="font-size:11px">▚▞</span>股市模擬大戶</span>
     <span id="index-chip">大盤指數 <b id="index-val">----</b> <span id="index-chg"></span></span>
     <span id="cash-chip"><span id="cash-coin" class="px-icon"></span>現金 $<span id="cash-val">-</span> <span id="frozen-val" style="color:var(--dim); font-size:11px"></span></span>
     <span class="spacer"></span>
@@ -188,7 +207,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     <section id="tab-market">
       <details class="panel" style="padding:8px 12px; margin-bottom:10px; font-size:13px"><summary style="cursor:pointer; color:var(--dim)">市場事件（進階）</summary><div id="events-bar" style="margin-top:8px"></div></details>
       <div id="stock-grid"></div>
-      <div style="color:var(--dim); font-size:11px; margin:8px 2px">單擊股票卡選擇下單 · 雙擊開 K 線圖（十字線＋歷史成交）</div>
+      <div style="color:var(--dim); font-size:11px; margin:8px 2px">單擊股票卡選擇下單 · 雙擊或點「走勢圖」開 K 線圖（十字線＋歷史成交）</div>
       <div id="stock-detail" class="panel hidden">
         <h2 id="detail-title"></h2>
         <svg id="detail-chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
@@ -248,25 +267,25 @@ export const PAGE_HTML = `<!DOCTYPE html>
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap">
         <span id="k-icon" class="px-icon"></span>
         <b id="k-title" style="font-size:16px"></b>
-        <span style="color:var(--dim); font-size:11px">雙擊股票卡開走勢圖 · 滾輪縮放 / 拖曳平移 / 十字線</span>
+        <span style="color:var(--dim); font-size:11px">滾輪/雙指縮放 · 拖曳平移 · 點一下看十字線</span>
         <span style="flex:1"></span>
-        <button class="ghost" id="k-close">關閉 ✕</button>
+        <button class="ghost" id="k-close" style="min-height:36px">關閉 ✕</button>
       </div>
       <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px; flex-wrap:wrap">
         <div id="k-modes" style="display:flex; gap:4px">
-          <button class="ghost active" data-mode="line" style="padding:4px 10px; font-size:12px">折線</button>
-          <button class="ghost" data-mode="candle" style="padding:4px 10px; font-size:12px">K 線</button>
+          <button class="ghost active" data-mode="line" style="padding:8px 12px; font-size:13px; min-height:36px">折線</button>
+          <button class="ghost" data-mode="candle" style="padding:8px 12px; font-size:13px; min-height:36px">K 線</button>
         </div>
         <div id="k-ranges" style="display:flex; gap:4px">
-          <button class="ghost active" data-range="all" style="padding:4px 10px; font-size:12px">全部</button>
-          <button class="ghost" data-range="4h" style="padding:4px 10px; font-size:12px">4H</button>
-          <button class="ghost" data-range="2h" style="padding:4px 10px; font-size:12px">2H</button>
-          <button class="ghost" data-range="1h" style="padding:4px 10px; font-size:12px">1H</button>
+          <button class="ghost active" data-range="all" style="padding:8px 12px; font-size:13px; min-height:36px">全部</button>
+          <button class="ghost" data-range="4h" style="padding:8px 12px; font-size:13px; min-height:36px">4H</button>
+          <button class="ghost" data-range="2h" style="padding:8px 12px; font-size:13px; min-height:36px">2H</button>
+          <button class="ghost" data-range="1h" style="padding:8px 12px; font-size:13px; min-height:36px">1H</button>
         </div>
         <span style="flex:1"></span>
-        <button class="ghost" id="k-zoom-out" style="padding:4px 10px; font-size:12px">－</button>
-        <button class="ghost" id="k-zoom-in" style="padding:4px 10px; font-size:12px">＋</button>
-        <button class="ghost" id="k-reset" style="padding:4px 10px; font-size:12px">重置</button>
+        <button class="ghost" id="k-zoom-out" style="padding:8px 12px; font-size:13px; min-height:36px">－</button>
+        <button class="ghost" id="k-zoom-in" style="padding:8px 12px; font-size:13px; min-height:36px">＋</button>
+        <button class="ghost" id="k-reset" style="padding:8px 12px; font-size:13px; min-height:36px">重置</button>
       </div>
       <canvas id="k-canvas" width="840" height="380"></canvas>
       <div id="k-info" style="color:var(--dim); font-size:12px; margin:6px 0 10px; min-height:16px">尚無資料</div>
@@ -316,12 +335,12 @@ function tick(){if(!document.hidden)poll();else timer=setTimeout(tick,1000);}
 // ---- 像素風 icon：16x16 字格，每個字元對應一種顏色 ----'
 const PX_PAL={K:'#ffd23f',k:'#c8951a',D:'#2b3a67',c:'#4db2ff',B:'#123a6d',b:'#1e5aa8',r:'#ff5470',R:'#c22434',G:'#3ddc78',g:'#9aa7bd',w:'#e8ecf5',O:'#ff9f2e',m:'#dfe6f5'};
 const PX_ICONS={
- '2330':['................','..g........g....','..g........g....','..g..DDDDDD..g..','..g..DccccD..g..','..g..DcKKcD..g..','..g..DccccD..g..','..g..DDDDDD..g..','..g........g....','..g........g....','................','................','................','................','................','................'],
- '2317':['................','.....wwww.......','....wwwwww......','...wwwwwww......','...wwwwwwO......','...wwwww........','....wwww........','....wwg.........','....wwg.........','....gg..........','................','................','................','................','................','................'],
- '2454':['................','......GGGG......','.....GGG........','....GGG.........','...GGGGGG.......','....GGGGG.......','.....GGGG.......','......GGG.......','.....GGG........','....GGG.........','...GGG..........','..GGG...........','..GG............','................','................','................'],
- '3711':['................','..KKK....mmm....','.KkkK...mwwm....','.KkkK...mwwm....','..KKK....mmm....','................','..bb..bb..bb....','.bbbbbbbbbbbbb..','..bb..bb..bb....','.bbbbbbbbbbbbb..','..bb..bb..bb....','................','................','................','................','................'],
- 'YZU':['................','.......cc.......','.....cccc.......','...cccccc.......','..ccccccc.......','..cccccc........','...cccc....b....','....ccc...bb....','.....cc..b......','......c.........','................','................','................','................','................','................'],
- 'YOUJIAN':['................','.....gggg.......','....gggggg......','....gwgggg......','....gggggg......','....ggwwgg......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....gggggg......','.....gggg.......','................','................','................'],
+ '2330':['................','...g...g...g....','...g...g...g....','..DDDDDDDDDD....','..DccccccccD....','..DcKKKKKKcD....','..DcKccccKcD....','..DcKccccKcD....','..DcKKKKKKcD....','..DccccccccD....','..DDDDDDDDDD....','...g...g...g....','...g...g...g....','................','................','................'],
+ '2317':['................','................','................','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr','rRRrrRRrrRRrrRRr','rrrrrrrrrrrrrrrr'],
+ '2454':['................','.......GG.......','......GGG.......','.....GGG........','....GGGG........','...GGGGGG.......','....GGGGG.......','.....GGGG.......','......GGG.......','.....GGG........','....GGG.........','...GGG..........','..GGG...........','..GG............','................','................'],
+ '3711':['................','..KKK.....mmm...','.KkkK...mwwm....','.KkkK...mwwm....','..KKK.....mmm...','................','.bb..bb..bb..bb.','bbbbbbbbbbbbbbbb','.bb..bb..bb..bb.','bbbbbbbbbbbbbbbb','.bb..bb..bb..bb.','................','................','................','................','................'],
+ 'YZU':['................','................','.......cc.......','.....cccc.......','...cccccc.......','..cccccc........','.cccccc.........','cccccc....bb....','.cccc...bb......','..ccc..bb.......','...cc...........','....c...........','................','................','................','................'],
+ 'YOUJIAN':['................','.....gggg.......','....gggggg......','....gwgggg......','....gggggg......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....ggrrrr......','....gggggg......','.....gggg.......','................','................','................'],
  COIN:['................','....kkkkkk......','..kkKKKKKKkk....','.kKKkkKKKKKKk...','.kKkKkkKKKkKk...','.kKkKKKKKKkKk...','.kKkKkkKKKkKk...','.kKKkkKKKKKKk...','..kkKKKKKKkk....','....kkkkkk......','................','................','................','................','................','................']
 };
 function pxIcon(name,size){
@@ -330,6 +349,8 @@ function pxIcon(name,size){
   grid.forEach((row,y)=>{for(let x=0;x<16;x++){const col=PX_PAL[row[x]];if(col)rects+='<rect x="'+(x*cell).toFixed(2)+'" y="'+(y*cell).toFixed(2)+'" width="'+cell.toFixed(2)+'" height="'+cell.toFixed(2)+'" fill="'+col+'"/>';}});
   return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" shape-rendering="crispEdges">'+rects+'</svg>';
 }
+
+const PX_NAMES={'2330':'台積電 晶圓代工','2317':'鴻海 紅海','2454':'聯發科 發哥','3711':'日月光投控 日月潭','YZU':'元智大學 海豚','YOUJIAN':'右鍵 滑鼠'};
 
 // ---- 走勢圖（雙擊股票卡開啟）：折線/K線切換、縮放平移、時間範圍、十字線 ----
 let kCandles=[], kHover=-1, kMouseY=null, kLayout=null, kReq=0, kDrag=null;
@@ -345,8 +366,10 @@ async function openChart(sym){
   selected=sym; render();
   const s=(state.stocks||[]).find(x=>x.symbol===sym);
   $('#k-icon').innerHTML=pxIcon(sym,28);
-  $('#k-title').textContent=((s&&s.nickname)||sym)+' '+sym+' 走勢';
+  const kn=s?(s.nickname&&s.nickname!==s.name?s.nickname+' '+s.name:s.name):sym;
+  $('#k-title').textContent=kn+' '+sym+' 走勢';
   $('#chart-modal').classList.remove('hidden');
+  document.body.style.overflow='hidden';
   $('#k-info').textContent='載入中…';
   const cv0=$('#k-canvas'); const dpr0=window.devicePixelRatio||1; cv0.width=840*dpr0; cv0.height=380*dpr0;
   const h=await api('/api/history?symbol='+encodeURIComponent(sym));
@@ -357,7 +380,7 @@ async function openChart(sym){
   $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+f.created_at+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+f.buyer_name+'</td><td>'+f.seller_name+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
   drawChart();
 }
-function closeChart(){$('#chart-modal').classList.add('hidden');}
+function closeChart(){$('#chart-modal').classList.add('hidden'); document.body.style.overflow='';}
 function fmtTickUTC(ms){return new Date(ms).toISOString().slice(0,19).replace('T',' ');}
 function setRange(r){
   kRange=r;
@@ -458,6 +481,17 @@ function bindChart(){
   cv.addEventListener('mousedown',e=>{const r=cv.getBoundingClientRect();kDrag={x:(e.clientX-r.left)*(840/r.width),start:kStart};});
   cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect(); if(!kLayout)return; const x=(e.clientX-r.left)*(840/r.width), yy=(e.clientY-r.top)*(380/r.height); if(kDrag){kStart=kDrag.start-Math.round((x-kDrag.x)/kLayout.step); clampView(); kHover=-1; drawChart(); return;} const i=Math.floor((x-kLayout.L)/kLayout.step)+kStart; kHover=(i>=kStart&&i<kStart+kCount)?i:-1; kMouseY=Math.max(kLayout.T,Math.min(kLayout.T+kLayout.ph,yy)); drawChart();});
   window.addEventListener('mouseup',()=>{kDrag=null;});
+  let kTouch=null;
+  cv.addEventListener('touchstart',e=>{e.preventDefault();const r=cv.getBoundingClientRect();
+    if(e.touches.length===2){kTouch={pinch:Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY)};kDrag=null;return;}
+    kTouch={x:(e.touches[0].clientX-r.left)*(840/r.width),moved:false};kDrag={x:kTouch.x,start:kStart};
+  },{passive:false});
+  cv.addEventListener('touchmove',e=>{e.preventDefault();if(!kLayout)return;const r=cv.getBoundingClientRect();
+    if(e.touches.length===2&&kTouch&&kTouch.pinch){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(Math.abs(d-kTouch.pinch)>2){zoomAt(kTouch.pinch/d);kTouch.pinch=d;}return;}
+    if(e.touches.length===1&&kDrag&&kTouch){const x=(e.touches[0].clientX-r.left)*(840/r.width);if(Math.abs(x-kTouch.x)>8)kTouch.moved=true;kStart=kDrag.start-Math.round((x-kDrag.x)/kLayout.step);clampView();kHover=-1;drawChart();}
+  },{passive:false});
+  cv.addEventListener('touchend',e=>{if(kTouch&&!kTouch.moved&&!kTouch.pinch&&kLayout){const t=e.changedTouches[0];const r=cv.getBoundingClientRect();const x=(t.clientX-r.left)*(840/r.width),yy=(t.clientY-r.top)*(380/r.height);const i=Math.floor((x-kLayout.L)/kLayout.step)+kStart;kHover=(i>=kStart&&i<kStart+kCount&&i<kCandles.length)?i:-1;kMouseY=Math.max(kLayout.T,Math.min(kLayout.T+kLayout.ph,yy));drawChart();}kTouch=null;kDrag=null;});
+  cv.addEventListener('touchcancel',()=>{kTouch=null;kDrag=null;});
   cv.addEventListener('mouseleave',()=>{kHover=-1;kMouseY=null;kDrag=null;drawChart();});
   $('#k-close').onclick=closeChart;
   $('#chart-modal').addEventListener('click',e=>{if(e.target.id==='chart-modal')closeChart();});
@@ -531,15 +565,16 @@ function renderMarket(){
     const prev=prevPrices[s.symbol]; let flash='';
     if(prev!=null&&prev!==s.price)flash=s.price>prev?' flash-up':' flash-down';
     prevPrices[s.symbol]=s.price;
-    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 雙擊開走勢圖">'
-      +'<div class="stock-head">'+pxIcon(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
+    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 雙擊或點「走勢圖」開圖">'
+      +'<div class="stock-head" title="'+(PX_NAMES[s.symbol]||s.name)+'">'+pxIcon(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
       +'<div class="price'+flash+'">$'+fmt(s.price)+'</div>'
       +'<div class="chg '+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</div>'
       +'<div class="mini-stats">高 $'+fmt(hi)+' · 低 $'+fmt(lo)+'</div>'
       +sparkline(hist,200,48,color)
+      +'<button class="ghost k-btn" style="margin-top:6px; padding:6px 10px; font-size:12px; min-height:32px">走勢圖</button>'
       +'</div>';
   }).join('');
-  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);}); // 單擊選擇下單，雙擊開走勢圖
+  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);const kb=c.querySelector('.k-btn');if(kb)kb.onclick=e=>{e.stopPropagation();openChart(c.dataset.sym);};}); // 單擊選擇下單，雙擊或點「走勢圖」開圖
   renderDetail();
 }
 
@@ -552,7 +587,8 @@ function renderDetail(){
   const chg=pct(s.price,s.ref_price);
   const color=chg>=0?'var(--red)':'var(--green)';
   // 只更新標題、走勢圖與盤口；下單表單維持不動，避免輪詢時搶走輸入框焦點
-  $('#detail-title').innerHTML=(s.nickname||s.name)+' '+s.symbol+' $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
+  const dn=s.nickname||s.name;
+  $('#detail-title').innerHTML=dn+' <span style="color:var(--dim); font-size:12px; font-weight:400">'+(dn!==s.name?s.name+' · ':'')+s.symbol+'</span> $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
   $('#ord-sym').textContent='下單：'+s.symbol+' '+(s.nickname||s.name);
   const vals=hist.map(p=>Number(p.price));
   const hi=vals.length?Math.max(...vals):s.price, lo=vals.length?Math.min(...vals):s.price;
@@ -565,6 +601,8 @@ function renderDetail(){
     ['賣一',ask?'$'+fmt(ask.price)+' × '+ask.quantity:'-']
   ].map(x=>'<div><div style="color:var(--dim); font-size:10px">'+x[0]+'</div><div style="color:'+(x[2]||'var(--txt)')+'">'+x[1]+'</div></div>').join('');
   // 走勢圖加上價格單位：最高/最低標籤 + 現價虛線標籤
+  $('#detail-chart').onclick=()=>openChart(selected);
+  $('#detail-chart').style.cursor='pointer';
   $('#detail-chart').innerHTML=hist.length>1?(()=>{const vals=hist.map(p=>Number(p.price));const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
     const pts=vals.map((v,i)=>(i*(540/(vals.length-1))).toFixed(1)+','+(170-((v-min)/span)*160).toFixed(1)).join(' ');
     const cy=(170-((s.price-min)/span)*160).toFixed(1);
