@@ -3,7 +3,7 @@
 const BOT = 1000000;
 
 // 有人瀏覽時市場才推進；沒人請求就完全靜止，不燒 D1 寫入額度。
-// 間隔由呼叫端依線上人數決定（見 activity.js），預設 15 秒。
+// 有人看盤時 tick 固定 15 秒（效能不變，見 activity.js）。
 
 export const TICK_INTERVAL_MS = 15000;
 

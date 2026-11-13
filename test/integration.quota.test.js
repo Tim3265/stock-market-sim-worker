@@ -16,11 +16,11 @@ async function get(path, cookie) {
 it('MM in-place requote 保住既有委託 id（FIFO 時間優先不變）', async () => {
   await get('/api/stocks');
   await env.DB.prepare('UPDATE market_state SET tick_count=4,last_tick_at=0').run();
-  await get('/api/orderbook?symbol=2330'); // tick_count 2 -> 3，會 requote
+  await get('/api/orderbook?symbol=2330'); // tick_count 4 -> 5，4%4===0 會 requote
   const before = (await env.DB.prepare("SELECT id FROM orders WHERE account_id=1000000 AND symbol='2330' AND status IN ('OPEN','PARTIAL') ORDER BY id").all()).results.map(r => r.id);
   expect(before.length).toBeGreaterThan(0);
   await env.DB.prepare('UPDATE market_state SET tick_count=8,last_tick_at=0').run();
-  await get('/api/orderbook?symbol=2330'); // tick_count 5 -> 6，再次 requote
+  await get('/api/orderbook?symbol=2330'); // tick_count 8 -> 9，再次 requote
   const after = (await env.DB.prepare("SELECT id FROM orders WHERE account_id=1000000 AND symbol='2330' AND status IN ('OPEN','PARTIAL') ORDER BY id").all()).results.map(r => r.id);
   expect(after).toEqual(before);
 });
@@ -28,11 +28,11 @@ it('MM in-place requote 保住既有委託 id（FIFO 時間優先不變）', asy
 it('非 requote 輪不改寫 MM 委託', async () => {
   await get('/api/stocks');
   await env.DB.prepare('UPDATE market_state SET tick_count=5,last_tick_at=0').run();
-  await get('/api/orderbook?symbol=2330'); // 3 -> 4，不 requote
+  await get('/api/orderbook?symbol=2330'); // 5 -> 6，不 requote
   const ids = (await env.DB.prepare("SELECT id,price FROM orders WHERE account_id=1000000 AND symbol='2330' AND status IN ('OPEN','PARTIAL') ORDER BY id").all()).results;
   expect(ids.length).toBeGreaterThan(0);
   await env.DB.prepare('UPDATE market_state SET tick_count=6,last_tick_at=0').run();
-  await get('/api/orderbook?symbol=2330'); // 4 -> 5，仍不 requote
+  await get('/api/orderbook?symbol=2330'); // 6 -> 7，仍不 requote
   const ids2 = (await env.DB.prepare("SELECT id,price FROM orders WHERE account_id=1000000 AND symbol='2330' AND status IN ('OPEN','PARTIAL') ORDER BY id").all()).results;
   expect(ids2).toEqual(ids);
 });
@@ -73,7 +73,7 @@ it('部分成交的 MM 委託在 requote 時撤銷重掛，不會把 filled_shar
   await env.DB.prepare("UPDATE orders SET filled_shares=5,status='PARTIAL' WHERE id=(SELECT id FROM orders WHERE account_id=1000000 AND symbol='2330' AND side='SELL' AND status='OPEN' ORDER BY id LIMIT 1)").run();
   const partialId = (await env.DB.prepare("SELECT id FROM orders WHERE account_id=1000000 AND symbol='2330' AND status='PARTIAL'").first()).id;
   await env.DB.prepare('UPDATE market_state SET tick_count=4,last_tick_at=0').run();
-  await get('/api/orderbook?symbol=2330'); // tick 2 -> 3，觸發 requote
+  await get('/api/orderbook?symbol=2330'); // tick 4 -> 5，觸發 requote
   const row = await env.DB.prepare('SELECT status,filled_shares FROM orders WHERE id=?').bind(partialId).first();
   expect(row.status).toBe('CANCELLED');
   expect(row.filled_shares).toBe(5); // 成交紀錄不被洗掉
