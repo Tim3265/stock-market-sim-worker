@@ -115,8 +115,8 @@ async function route(request, env) {
         }
         trades = await queries.listTrades(env.DB, session.account_id, 30, 0, {side: tradeSide});
       } else if (account) {
-        account.frozen_cash = (await env.DB.prepare('SELECT frozen_cash FROM accounts WHERE id=?').bind(session.account_id).first()).frozen_cash;
-        account.available_cash = Number(account.cash) - Number(account.frozen_cash);
+        account.frozen_cash = account.frozenCash;
+        account.available_cash = account.availableCash;
       }
     }
     const bookResult = await book(env.DB, symbol);

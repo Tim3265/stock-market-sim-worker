@@ -273,6 +273,7 @@ function start(){
     document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.toggle('active',x===b));
     ['market','portfolio','orders','fills','leaderboard','bots'].forEach(t=>$('#tab-'+t).classList.toggle('hidden',t!==tab));
     render();
+    poll(); // 切換分頁立刻抓一次完整資料，避免空白一個週期
   });
   poll();
 }
