@@ -117,7 +117,8 @@ export const PAGE_HTML = `<!DOCTYPE html>
   .up{color:var(--red);} .down{color:var(--green);}
   .section-title{font-size:13px; color:var(--gold); margin-bottom:10px;}
   .row-actions button{padding:4px 8px; font-size:10px;}
-  #broker-note{color:var(--dim); font-size:10px;}
+  #broker-note{color:var(--dim); font-size:11px;}
+  details summary{cursor:pointer; list-style:none;} details summary::-webkit-details-marker{display:none;} details summary::before{content:"▸ "; color:var(--gold);} details[open] summary::before{content:"▾ ";}
   footer{color:var(--dim); font-size:9px; text-align:center; padding:18px;}
 </style>
 </head>
@@ -167,15 +168,17 @@ export const PAGE_HTML = `<!DOCTYPE html>
     </div>
 
     <section id="tab-market">
-      <div id="events-bar" class="panel" style="padding:8px 12px; margin-bottom:10px; font-size:11px"></div>
+      <details class="panel" style="padding:8px 12px; margin-bottom:10px; font-size:13px"><summary style="cursor:pointer; color:var(--dim)">市場事件（進階）</summary><div id="events-bar" style="margin-top:8px"></div></details>
       <div id="stock-grid"></div>
       <div id="stock-detail" class="panel hidden">
         <h2 id="detail-title"></h2>
         <svg id="detail-chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
+        <details open><summary style="cursor:pointer; color:var(--dim); font-size:13px; margin-bottom:8px">十檔委託簿（進階）</summary>
         <div class="book-wrap">
           <div class="book-col panel" style="padding:10px"><h3>賣出（十檔）</h3><div id="asks-rows"></div></div>
           <div class="book-col panel" style="padding:10px"><h3>買入（十檔）</h3><div id="bids-rows"></div></div>
         </div>
+        </details>
       </div>
     </section>
 
@@ -184,8 +187,9 @@ export const PAGE_HTML = `<!DOCTYPE html>
         <div class="section-title">資產總覽</div>
         <div id="portfolio-summary" style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:14px;"></div>
         <table id="holdings-table"><thead><tr><th>股票</th><th>持有股數</th><th>市值</th></tr></thead><tbody></tbody></table>
-        <div class="section-title" style="margin-top:18px">交易紀錄 <a id="csv-link" href="/api/trades/export" style="color:var(--blue); font-size:10px">下載 CSV</a></div>
+        <details style="margin-top:18px"><summary class="section-title" style="cursor:pointer">交易紀錄（進階） <a id="csv-link" href="/api/trades/export" onclick="event.stopPropagation()" style="color:var(--blue); font-size:11px">下載 CSV</a></summary>
         <table id="trades-table"><thead><tr><th>時間</th><th>股票</th><th>買賣</th><th>股數</th><th>價格</th><th>金額</th></tr></thead><tbody></tbody></table>
+        </details>
       </div>
     </section>
 
@@ -319,8 +323,7 @@ function renderMarket(){
       +'<div class="chg '+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</div>'
       +sparkline(hist,200,48,color)
       +'</div>';
-  }).join('');
-  grid.querySelectorAll('.stock-card').forEach(c=>c.onclick=()=>{selected=c.dataset.sym;poll();});
+  grid.querySelectorAll('.stock-card').forEach(c=>c.onclick=()=>{selected=c.dataset.sym;render();poll();}); // 先即時渲染，再背景更新
   renderDetail();
 }
 
@@ -346,6 +349,7 @@ function renderDetail(){
       +'<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="3"/>';})()
     :'<text x="300" y="95" fill="#8a90b8" font-size="12" text-anchor="middle">尚無成交資料</text>';
   updateEst();
+  if(state.bookSymbol!==selected){$('#asks-rows').innerHTML='';$('#bids-rows').innerHTML='';return;} // 盤口還是上一檔的資料，先清空
   const maxQ=Math.max(1,...[...state.bids,...state.asks].map(b=>b.quantity));
   const row=(b,side)=>'<div class="book-row"><span class="'+side+'">$'+fmt(b.price)+'</span><span>'+b.quantity+'</span></div>'
     +'<div class="bar '+side+'" style="width:'+Math.round(b.quantity/maxQ*100)+'%"></div>';

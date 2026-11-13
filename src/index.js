@@ -143,6 +143,7 @@ async function route(request, env) {
       account,
       holdings,
       ...(light?{}:{orders,trades}),
+      bookSymbol: symbol,
       bids: bookResult.bids || [],
       asks: bookResult.asks || [],
       ...(light?{}:{fills}),
