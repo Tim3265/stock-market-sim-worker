@@ -294,7 +294,7 @@ function sparkline(points,w,h,color){
   return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">'
     +'<polygon points="0,'+(h-2)+' '+pts.join(' ')+' '+w+','+(h-2)+'" fill="'+color+'" opacity="0.15"/>'
     +'<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2"/>'
-    +'<circle cx="'+last[0]+'" cy="'+last[1]+'" r="3" fill="'+color+'"/></svg>';
+    +'<circle cx="'+Math.min(w-3,Number(last[0]))+'" cy="'+last[1]+'" r="3" fill="'+color+'"/></svg>';
 }
 
 async function api(path,opts){
@@ -413,7 +413,7 @@ function drawChart(){
   } else {
     const up=vis[m-1].close>=vis[0].close, col=up?'#ff5470':'#3ddc78';
     const pts=vis.map((c,i)=>X(kStart+i)+','+y(c.close));
-    ctx.beginPath(); ctx.moveTo(L,T+ph); ctx.lineTo(X(kStart),y(vis[0].close));
+    ctx.beginPath(); ctx.moveTo(X(kStart),T+ph); ctx.lineTo(X(kStart),y(vis[0].close));
     pts.forEach(p=>{const a=p.split(',');ctx.lineTo(Number(a[0]),Number(a[1]));});
     ctx.lineTo(X(kStart+m-1),T+ph); ctx.closePath();
     ctx.fillStyle=col; ctx.globalAlpha=0.15; ctx.fill(); ctx.globalAlpha=1;
@@ -464,7 +464,7 @@ function bindChart(){
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeChart();});
 }
 
-async function poll(){
+async function poll(){ clearTimeout(timer);
   try{
     state=await api('/api/live?symbol='+selected+(tab==='market'?'&light=1':''));
     render();
@@ -557,7 +557,7 @@ function renderDetail(){
   const vals=hist.map(p=>Number(p.price));
   const hi=vals.length?Math.max(...vals):s.price, lo=vals.length?Math.min(...vals):s.price;
   const dChg=s.price-s.ref_price, dChgPct=pct(s.price,s.ref_price);
-  const bid=state.bids&&state.bids[0], ask=state.asks&&state.asks[0];
+  const bookOk=state.bookSymbol===selected; const bid=bookOk&&state.bids&&state.bids[0], ask=bookOk&&state.asks&&state.asks[0];
   $('#detail-stats').innerHTML=[
     ['漲跌',(dChg>=0?'+':'')+fmt(dChg)+' ('+(dChgPct>=0?'+':'')+dChgPct.toFixed(2)+'%)',dChg>=0?'var(--red)':'var(--green)'],
     ['最高','$'+fmt(hi)],['最低','$'+fmt(lo)],
