@@ -8,7 +8,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>股市模擬大戶 — PIXEL Trader</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0d0f1a; --panel:#171a2b; --panel2:#1f2338; --line:#2e3352;
@@ -125,13 +125,14 @@ export const PAGE_HTML = `<!DOCTYPE html>
     .stock-card .price{font-size:16px;}
     .stock-head .nick{font-size:13px;}
     .stock-card .mini-stats{font-size:9px;}
-    nav.tabs button{padding:10px 12px; min-height:40px; font-size:13px; flex:1;}
+    nav.tabs button{padding:10px 12px; min-height:44px; font-size:13px; flex:1;}
+    .panel{overflow-x:auto;}
     #order-form{gap:6px; padding:8px;}
     #order-form input{flex:1; min-width:80px; width:auto;}
     #order-form button{flex:1; min-height:44px;}
     #chart-modal{padding:0; align-items:stretch;}
     #chart-modal .panel{width:100vw; max-height:100vh; border-left:0; border-right:0; padding:12px;}
-    #k-canvas{height:320px;}
+    #k-canvas{height:auto; aspect-ratio:840/380;}
     table{font-size:12px;}
     #stock-detail{padding:12px;}
   }
@@ -206,7 +207,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     <section id="tab-market">
       <details class="panel" style="padding:8px 12px; margin-bottom:10px; font-size:13px"><summary style="cursor:pointer; color:var(--dim)">市場事件（進階）</summary><div id="events-bar" style="margin-top:8px"></div></details>
       <div id="stock-grid"></div>
-      <div style="color:var(--dim); font-size:11px; margin:8px 2px">單擊股票卡選擇下單 · 雙擊開 K 線圖（十字線＋歷史成交）</div>
+      <div style="color:var(--dim); font-size:11px; margin:8px 2px">單擊股票卡選擇下單 · 雙擊或點「走勢圖」開 K 線圖（十字線＋歷史成交）</div>
       <div id="stock-detail" class="panel hidden">
         <h2 id="detail-title"></h2>
         <svg id="detail-chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg>
@@ -266,25 +267,25 @@ export const PAGE_HTML = `<!DOCTYPE html>
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap">
         <span id="k-icon" class="px-icon"></span>
         <b id="k-title" style="font-size:16px"></b>
-        <span style="color:var(--dim); font-size:11px">雙擊股票卡開走勢圖 · 滾輪縮放 / 拖曳平移 / 十字線</span>
+        <span style="color:var(--dim); font-size:11px">滾輪/雙指縮放 · 拖曳平移 · 點一下看十字線</span>
         <span style="flex:1"></span>
         <button class="ghost" id="k-close">關閉 ✕</button>
       </div>
       <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px; flex-wrap:wrap">
         <div id="k-modes" style="display:flex; gap:4px">
-          <button class="ghost active" data-mode="line" style="padding:4px 10px; font-size:12px">折線</button>
-          <button class="ghost" data-mode="candle" style="padding:4px 10px; font-size:12px">K 線</button>
+          <button class="ghost active" data-mode="line" style="padding:8px 12px; font-size:13px; min-height:36px">折線</button>
+          <button class="ghost" data-mode="candle" style="padding:8px 12px; font-size:13px; min-height:36px">K 線</button>
         </div>
         <div id="k-ranges" style="display:flex; gap:4px">
-          <button class="ghost active" data-range="all" style="padding:4px 10px; font-size:12px">全部</button>
-          <button class="ghost" data-range="4h" style="padding:4px 10px; font-size:12px">4H</button>
-          <button class="ghost" data-range="2h" style="padding:4px 10px; font-size:12px">2H</button>
-          <button class="ghost" data-range="1h" style="padding:4px 10px; font-size:12px">1H</button>
+          <button class="ghost active" data-range="all" style="padding:8px 12px; font-size:13px; min-height:36px">全部</button>
+          <button class="ghost" data-range="4h" style="padding:8px 12px; font-size:13px; min-height:36px">4H</button>
+          <button class="ghost" data-range="2h" style="padding:8px 12px; font-size:13px; min-height:36px">2H</button>
+          <button class="ghost" data-range="1h" style="padding:8px 12px; font-size:13px; min-height:36px">1H</button>
         </div>
         <span style="flex:1"></span>
-        <button class="ghost" id="k-zoom-out" style="padding:4px 10px; font-size:12px">－</button>
-        <button class="ghost" id="k-zoom-in" style="padding:4px 10px; font-size:12px">＋</button>
-        <button class="ghost" id="k-reset" style="padding:4px 10px; font-size:12px">重置</button>
+        <button class="ghost" id="k-zoom-out" style="padding:8px 12px; font-size:13px; min-height:36px">－</button>
+        <button class="ghost" id="k-zoom-in" style="padding:8px 12px; font-size:13px; min-height:36px">＋</button>
+        <button class="ghost" id="k-reset" style="padding:8px 12px; font-size:13px; min-height:36px">重置</button>
       </div>
       <canvas id="k-canvas" width="840" height="380"></canvas>
       <div id="k-info" style="color:var(--dim); font-size:12px; margin:6px 0 10px; min-height:16px">尚無資料</div>
@@ -365,8 +366,10 @@ async function openChart(sym){
   selected=sym; render();
   const s=(state.stocks||[]).find(x=>x.symbol===sym);
   $('#k-icon').innerHTML=pxIcon(sym,28);
-  $('#k-title').textContent=((s&&s.nickname)||sym)+' '+(s?s.name:'')+' '+sym+' 走勢';
+  const kn=s?(s.nickname&&s.nickname!==s.name?s.nickname+' '+s.name:s.name):sym;
+  $('#k-title').textContent=kn+' '+sym+' 走勢';
   $('#chart-modal').classList.remove('hidden');
+  document.body.style.overflow='hidden';
   $('#k-info').textContent='載入中…';
   const cv0=$('#k-canvas'); const dpr0=window.devicePixelRatio||1; cv0.width=840*dpr0; cv0.height=380*dpr0;
   const h=await api('/api/history?symbol='+encodeURIComponent(sym));
@@ -377,7 +380,7 @@ async function openChart(sym){
   $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+f.created_at+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+f.buyer_name+'</td><td>'+f.seller_name+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
   drawChart();
 }
-function closeChart(){$('#chart-modal').classList.add('hidden');}
+function closeChart(){$('#chart-modal').classList.add('hidden'); document.body.style.overflow='';}
 function fmtTickUTC(ms){return new Date(ms).toISOString().slice(0,19).replace('T',' ');}
 function setRange(r){
   kRange=r;
@@ -484,10 +487,11 @@ function bindChart(){
     kTouch={x:(e.touches[0].clientX-r.left)*(840/r.width),moved:false};kDrag={x:kTouch.x,start:kStart};
   },{passive:false});
   cv.addEventListener('touchmove',e=>{e.preventDefault();if(!kLayout)return;const r=cv.getBoundingClientRect();
-    if(e.touches.length===2&&kTouch&&kTouch.pinch){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);zoomAt(d>kTouch.pinch?0.9:1.1);kTouch.pinch=d;return;}
+    if(e.touches.length===2&&kTouch&&kTouch.pinch){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(Math.abs(d-kTouch.pinch)>2){zoomAt(kTouch.pinch/d);kTouch.pinch=d;}return;}
     if(e.touches.length===1&&kDrag){const x=(e.touches[0].clientX-r.left)*(840/r.width);if(Math.abs(x-kTouch.x)>8)kTouch.moved=true;kStart=kDrag.start-Math.round((x-kDrag.x)/kLayout.step);clampView();kHover=-1;drawChart();}
   },{passive:false});
   cv.addEventListener('touchend',e=>{if(kTouch&&!kTouch.moved&&!kTouch.pinch&&kLayout){const t=e.changedTouches[0];const r=cv.getBoundingClientRect();const x=(t.clientX-r.left)*(840/r.width),yy=(t.clientY-r.top)*(380/r.height);const i=Math.floor((x-kLayout.L)/kLayout.step)+kStart;kHover=(i>=kStart&&i<kStart+kCount&&i<kCandles.length)?i:-1;kMouseY=Math.max(kLayout.T,Math.min(kLayout.T+kLayout.ph,yy));drawChart();}kTouch=null;kDrag=null;});
+  cv.addEventListener('touchcancel',()=>{kTouch=null;kDrag=null;});
   cv.addEventListener('mouseleave',()=>{kHover=-1;kMouseY=null;kDrag=null;drawChart();});
   $('#k-close').onclick=closeChart;
   $('#chart-modal').addEventListener('click',e=>{if(e.target.id==='chart-modal')closeChart();});
@@ -567,9 +571,10 @@ function renderMarket(){
       +'<div class="chg '+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</div>'
       +'<div class="mini-stats">高 $'+fmt(hi)+' · 低 $'+fmt(lo)+'</div>'
       +sparkline(hist,200,48,color)
+      +'<button class="ghost k-btn" style="margin-top:6px; padding:6px 10px; font-size:12px; min-height:32px">走勢圖</button>'
       +'</div>';
   }).join('');
-  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);}); // 單擊選擇下單，雙擊開走勢圖
+  grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);const kb=c.querySelector('.k-btn');if(kb)kb.onclick=e=>{e.stopPropagation();openChart(c.dataset.sym);};}); // 單擊選擇下單，雙擊或點「走勢圖」開圖
   renderDetail();
 }
 
@@ -582,7 +587,8 @@ function renderDetail(){
   const chg=pct(s.price,s.ref_price);
   const color=chg>=0?'var(--red)':'var(--green)';
   // 只更新標題、走勢圖與盤口；下單表單維持不動，避免輪詢時搶走輸入框焦點
-  $('#detail-title').innerHTML=(s.nickname||s.name)+' <span style="color:var(--dim); font-size:12px; font-weight:400">'+s.name+' · '+s.symbol+'</span> $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
+  const dn=s.nickname||s.name;
+  $('#detail-title').innerHTML=dn+' <span style="color:var(--dim); font-size:12px; font-weight:400">'+(dn!==s.name?s.name+' · ':'')+s.symbol+'</span> $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
   $('#ord-sym').textContent='下單：'+s.symbol+' '+(s.nickname||s.name);
   const vals=hist.map(p=>Number(p.price));
   const hi=vals.length?Math.max(...vals):s.price, lo=vals.length?Math.min(...vals):s.price;
@@ -595,6 +601,8 @@ function renderDetail(){
     ['賣一',ask?'$'+fmt(ask.price)+' × '+ask.quantity:'-']
   ].map(x=>'<div><div style="color:var(--dim); font-size:10px">'+x[0]+'</div><div style="color:'+(x[2]||'var(--txt)')+'">'+x[1]+'</div></div>').join('');
   // 走勢圖加上價格單位：最高/最低標籤 + 現價虛線標籤
+  $('#detail-chart').onclick=()=>openChart(selected);
+  $('#detail-chart').style.cursor='pointer';
   $('#detail-chart').innerHTML=hist.length>1?(()=>{const vals=hist.map(p=>Number(p.price));const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;
     const pts=vals.map((v,i)=>(i*(540/(vals.length-1))).toFixed(1)+','+(170-((v-min)/span)*160).toFixed(1)).join(' ');
     const cy=(170-((s.price-min)/span)*160).toFixed(1);
