@@ -38,7 +38,7 @@ function instrument(db, acc) {
 }
 
 async function call(ienv, path, cookie, method = 'GET', body) {
-  const headers = {};
+  const headers = { Authorization: 'Bearer test-dev-secret' };
   if (cookie) headers.Cookie = cookie;
   if (body) headers['Content-Type'] = 'application/json';
   const res = await worker.fetch(new Request('https://example.com' + path, { method, headers, body: body ? JSON.stringify(body) : undefined }), ienv);

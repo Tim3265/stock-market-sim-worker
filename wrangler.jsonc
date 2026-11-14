@@ -3,6 +3,7 @@
   "name": "stock-sim",
   "main": "src/index.js",
   "compatibility_date": "2026-11-01",
+  "vars": { "DEV_SECRET": "local-dev-only-secret" },
 
   // 這就是「Worker + D1」的接線：
   // 把 D1 資料庫綁定到程式裡的 env.DB

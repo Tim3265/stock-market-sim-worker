@@ -27,7 +27,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
  });
  it('市場活躍時機器人偶爾真實成交，並發請求不重複執行',async()=>{
   await get('/api/stocks');
-  await env.DB.prepare('UPDATE market_state SET tick_count=6,last_tick_at=? WHERE id=1').bind(Date.now()).run();
+  await env.DB.prepare('UPDATE market_state SET tick_count=5,last_tick_at=? WHERE id=1').bind(Date.now()-16000).run();
   const result=await Promise.all(Array.from({length:5},()=>get('/api/stocks')));
   expect(result.every(r=>r.status===200)).toBe(true);
   expect(await env.DB.prepare("SELECT COUNT(*) n FROM orders WHERE request_id='bot-activity-tick-6'").first()).toEqual({n:1});
@@ -37,7 +37,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await get('/api/stocks');
   for(const price of [1200,1210,1220,1230,1240])await env.DB.prepare("INSERT INTO price_history(symbol,price,source) VALUES('2454',?,'TRADE')").bind(price).run();
   await env.DB.prepare("INSERT INTO bot_state(account_id,symbol,panic_until) VALUES(1000003,'2454',6)").run();
-  await env.DB.prepare('UPDATE market_state SET tick_count=6,last_tick_at=?').bind(Date.now()).run();
+  await env.DB.prepare('UPDATE market_state SET tick_count=5,last_tick_at=?').bind(Date.now()-16000).run();
   expect((await get('/api/stocks')).status).toBe(200);
   expect(await env.DB.prepare("SELECT account_id,side FROM orders WHERE request_id='bot-momentum-2454-tick-6'").first()).toEqual({account_id:1000001,side:'BUY'});
   expect(await env.DB.prepare("SELECT account_id,side FROM orders WHERE request_id='bot-panic-2454-tick-6'").first()).toEqual({account_id:1000003,side:'SELL'});
@@ -45,7 +45,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
  it('偏離合理價格時價值機器人會反向掛限價單',async()=>{
   await get('/api/stocks');
   await env.DB.prepare("UPDATE stocks SET price=48 WHERE symbol='YZU'").run();
-  await env.DB.prepare('UPDATE market_state SET tick_count=10,last_tick_at=?').bind(Date.now()).run();
+  await env.DB.prepare('UPDATE market_state SET tick_count=9,last_tick_at=?').bind(Date.now()-16000).run();
   expect((await get('/api/stocks')).status).toBe(200);
   expect(await env.DB.prepare("SELECT account_id,side,type FROM orders WHERE request_id='bot-value-YZU-tick-10'").first()).toEqual({account_id:1000002,side:'SELL',type:'LIMIT'});
  });
@@ -287,7 +287,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const anonTick=await SELF.fetch(base+'/api/tick',{method:'POST'});
   expect(anonTick.status).toBe(401);
   const before=await env.DB.prepare('SELECT last_tick_at FROM market_state WHERE id=1').first();
-  const r=await SELF.fetch(base+'/api/market/fast-forward',{method:'POST',headers:{'content-type':'application/json',Cookie:await cookie(1)},body:'{"ticks":2}'});
+  const r=await SELF.fetch(base+'/api/market/fast-forward',{method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer test-dev-secret',Cookie:await cookie(1)},body:'{"ticks":2}'});
   expect(r.status).toBe(200);
   const after=await env.DB.prepare('SELECT last_tick_at FROM market_state WHERE id=1').first();
   expect(after.last_tick_at).toBeLessThanOrEqual(Date.now());

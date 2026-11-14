@@ -1,5 +1,4 @@
 import { matchOrders } from './orderbook.js';
-import { maybeTick } from './marketMaker.js';
 const cents=x=>Math.round(Number(x)*100);
 const money=x=>x/100;
 
@@ -9,7 +8,6 @@ const feeCents=(priceCents,shares)=>Math.ceil(priceCents*shares*399/1000000);
 const err=(code,message)=>({ok:false,code,message});
 const prepare=(db,sql,...values)=>db.prepare(sql).bind(...values);
 export async function book(db,symbol,depth=10){
- await maybeTick(db);
  const stock=await prepare(db,'SELECT symbol,price,ref_price FROM stocks WHERE symbol=?',symbol).first();
  if(!stock)return err('NOT_FOUND','沒有這檔股票');
  const rows=(await prepare(db,"SELECT side,price,SUM(shares-filled_shares) quantity FROM orders WHERE symbol=? AND status IN ('OPEN','PARTIAL') AND type='LIMIT' GROUP BY side,price",symbol).all()).results;
@@ -84,7 +82,6 @@ export async function placeMarketOrder(db,input){
  const type=input.type??'MARKET', limit=Number(input.price);
  const requestId=String(input.request_id??crypto.randomUUID());
  if(!Number.isSafeInteger(accountId)||accountId<1||!symbol||!['BUY','SELL'].includes(side)||!Number.isSafeInteger(shares)||shares<1||shares>10000000||!/^[-a-zA-Z0-9_]{16,100}$/.test(requestId))return err('INVALID_INPUT','委託資料錯誤');
- await maybeTick(db);
  if(type==='LIMIT'){
   const stock=await prepare(db,'SELECT ref_price FROM stocks WHERE symbol=?',symbol).first();
   if(!stock)return err('NOT_FOUND','沒有這檔股票');
