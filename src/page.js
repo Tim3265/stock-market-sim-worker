@@ -743,19 +743,19 @@ function renderPortfolio(){
   const hb=$('#holdings-table tbody');
   hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+esc(h.symbol)+' '+esc(h.nickname||h.name)+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>$'+fmt(h.market_value)+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--dim)">無持股</td></tr>';
   const tb=$('#trades-table tbody');
-  tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+fmtTime(t.created_at)+'</td><td>'+t.symbol+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無交易紀錄</td></tr>';
+  tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+fmtTime(t.created_at)+'</td><td>'+esc(t.symbol)+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無交易紀錄</td></tr>';
 }
 
 function renderOrders(){
   const ob=$('#orders-table tbody');
   const open=(state.orders||[]).filter(o=>o.status==='OPEN'||o.status==='PARTIAL');
-  ob.innerHTML=open.map(o=>'<tr><td>'+o.symbol+'</td><td class="'+(o.side==='BUY'?'up':'down')+'">'+(o.side==='BUY'?'買':'賣')+'</td><td>'+o.type+'</td><td>'+(o.price?('$'+fmt(o.price)):'市價')+'</td><td>'+o.shares+'</td><td>'+o.filled_shares+'</td><td>'+o.status+'</td><td class="row-actions"><button class="ghost" data-cancel="'+o.id+'">取消</button></td></tr>').join('')||'<tr><td colspan="8" style="color:var(--dim)">無進行中委託</td></tr>';
+  ob.innerHTML=open.map(o=>'<tr><td>'+esc(o.symbol)+'</td><td class="'+(o.side==='BUY'?'up':'down')+'">'+(o.side==='BUY'?'買':'賣')+'</td><td>'+esc(o.type)+'</td><td>'+(o.price?('$'+fmt(o.price)):'市價')+'</td><td>'+o.shares+'</td><td>'+o.filled_shares+'</td><td>'+esc(o.status)+'</td><td class="row-actions"><button class="ghost" data-cancel="'+o.id+'">取消</button></td></tr>').join('')||'<tr><td colspan="8" style="color:var(--dim)">無進行中委託</td></tr>';
   ob.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{await api('/api/orders/'+b.dataset.cancel,{method:'DELETE'});poll();});
 }
 
 function renderFills(){
   const fb=$('#fills-table tbody');
-  fb.innerHTML=(state.fills||[]).slice(0,30).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.symbol+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>'+esc(f.buyer_name)+(f.buyer_is_bot?' 🤖':'')+'</td><td>'+esc(f.seller_name)+(f.seller_is_bot?' 🤖':'')+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無成交</td></tr>';
+  fb.innerHTML=(state.fills||[]).slice(0,30).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+esc(f.symbol)+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>'+esc(f.buyer_name)+(f.buyer_is_bot?' 🤖':'')+'</td><td>'+esc(f.seller_name)+(f.seller_is_bot?' 🤖':'')+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無成交</td></tr>';
 }
 
 async function renderLeaderboard(){
