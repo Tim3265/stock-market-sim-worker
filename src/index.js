@@ -333,7 +333,7 @@ async function route(request, env) {
   return new Response(PAGE_HTML, {
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+      "content-security-policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'",
       "x-content-type-options": "nosniff",
       "x-frame-options": "DENY",
       "referrer-policy": "no-referrer",
