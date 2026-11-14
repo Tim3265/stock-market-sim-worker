@@ -42,7 +42,7 @@ async function route(request, env) {
   const path = url.pathname;
   const upgraded = path.startsWith('/api/') && await isUpgraded(env.DB);
   noteRequest();
-  if (upgraded) { await maybeTick(env.DB, Date.now(), tickIntervalMs()); await matchCrossed(env.DB); await runBotActivity(env.DB); }
+  if (upgraded) { const ticked = await maybeTick(env.DB, Date.now(), tickIntervalMs()); await matchCrossed(env.DB); if (ticked) await runBotActivity(env.DB); }
   if (path.startsWith('/api/') && !['GET','HEAD'].includes(request.method)) {
     const origin=request.headers.get('Origin');
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
@@ -72,6 +72,7 @@ async function route(request, env) {
           env.DB.prepare("UPDATE orders SET status='CANCELLED' WHERE account_id=? AND status IN ('OPEN','PARTIAL')").bind(current.account_id),
           env.DB.prepare('UPDATE accounts SET frozen_cash=0 WHERE id=?').bind(current.account_id),
           env.DB.prepare('UPDATE holdings SET frozen_shares=0 WHERE account_id=?').bind(current.account_id),
+          env.DB.prepare('DELETE FROM holdings WHERE account_id=?').bind(current.account_id),
           env.DB.prepare('UPDATE accounts SET cash=? WHERE id=?').bind(initialCash, current.account_id),
           env.DB.prepare('DELETE FROM transaction_guard'),
         ]);
@@ -183,7 +184,7 @@ async function route(request, env) {
     // 開發／demo 用：需要登入，避免匿名請求推進市場、燒 D1 寫入額度。
     const current = await auth.session(env.DB, request);
     if (!current) return Response.json({ ok: false, code: 'UNAUTHENTICATED', message: '請先登入' }, { status: 401 });
-    if (env.DEV_SECRET && request.headers.get('Authorization') !== 'Bearer ' + env.DEV_SECRET)
+    if (!env.DEV_SECRET || request.headers.get('Authorization') !== 'Bearer ' + env.DEV_SECRET)
       return Response.json({ ok: false, code: 'FORBIDDEN', message: '需要開發金鑰' }, { status: 403 });
     if (!await auth.allowAttempt(env.DB, request, 'dev')) return fail('RATE_LIMITED', '操作太頻繁，請五分鐘後再試');
     if (upgraded) {
@@ -280,7 +281,7 @@ async function route(request, env) {
     // 開發／demo 用：需要登入；若環境設定 DEV_SECRET 則需帶 Authorization: Bearer。
     const current = await auth.session(env.DB, request);
     if (!current) return Response.json({ ok: false, code: 'UNAUTHENTICATED', message: '請先登入' }, { status: 401 });
-    if (env.DEV_SECRET && request.headers.get('Authorization') !== 'Bearer ' + env.DEV_SECRET)
+    if (!env.DEV_SECRET || request.headers.get('Authorization') !== 'Bearer ' + env.DEV_SECRET)
       return Response.json({ ok: false, code: 'FORBIDDEN', message: '需要開發金鑰' }, { status: 403 });
     if (!await auth.allowAttempt(env.DB, request, 'dev')) return fail('RATE_LIMITED', '操作太頻繁，請五分鐘後再試');
     let input;try{input=await request.json();}catch{return fail('INVALID_INPUT','請求內容必須是 JSON');}
@@ -330,7 +331,13 @@ async function route(request, env) {
   }
 
   return new Response(PAGE_HTML, {
-    headers: { "content-type": "text/html; charset=utf-8" },
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "referrer-policy": "no-referrer",
+    },
   });
 }
 

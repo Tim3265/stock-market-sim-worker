@@ -10,6 +10,7 @@ async function derive(password,salt){
 export async function allowAttempt(db,request,scope='auth'){
  const address=request.headers.get('CF-Connecting-IP')||'local';
  const key=await digest(address+':'+scope),now=Date.now(),windowStart=now-300000;
+ if(Math.random()<0.02)await db.prepare('DELETE FROM auth_rate_limits WHERE window_start<?').bind(now-3600000).run();
  const row=await db.prepare(`INSERT INTO auth_rate_limits(key_hash,window_start,attempts) VALUES(?,?,1)
  ON CONFLICT(key_hash) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END,window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END RETURNING attempts`).bind(key,now,windowStart,windowStart).first();
  return row.attempts<=15;

@@ -328,6 +328,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
 
 <script>
 const $=s=>document.querySelector(s);
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:2});
 // SQLite 存 UTC 字串；這裡轉成玩家本地時間（台灣 UTC+8）。一小時內顯示相對時間，今天顯示 HH:MM:SS，跨日顯示 MM/DD HH:MM
 function fmtTime(utc){
@@ -459,7 +460,7 @@ async function openChart(sym){
   if(!h||!h.ok){$('#k-info').textContent='載入失敗';return;}
   kCandles=buildCandles(h.history,h.fills||[]); kHover=-1; kMouseY=null; kDrag=null;
   setRange(kRange);
-  $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+f.buyer_name+'</td><td>'+f.seller_name+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
+  $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+esc(f.buyer_name)+'</td><td>'+esc(f.seller_name)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
   drawChart();
 }
 function closeChart(){$('#chart-modal').classList.add('hidden'); document.body.style.overflow='';}
@@ -635,7 +636,7 @@ function render(){
 
 function renderMarket(){
   const ev=$('#events-bar');
-  if(ev)ev.innerHTML=(state.events||[]).map(e=>'<div><b>'+e.symbol+'</b> '+e.title+' <span class="'+(String(e.impact).startsWith('-')?'down':'up')+'">'+e.impact+'</span></div>').join('')||'<span style="color:var(--dim)">目前無市場事件</span>';
+  if(ev)ev.innerHTML=(state.events||[]).map(e=>'<div><b>'+esc(e.symbol)+'</b> '+esc(e.title)+' <span class="'+(String(e.impact).startsWith('-')?'down':'up')+'">'+esc(e.impact)+'</span></div>').join('')||'<span style="color:var(--dim)">目前無市場事件</span>';
   const grid=$('#stock-grid');
   grid.innerHTML=state.stocks.map(s=>{
     const hist=state.histories[s.symbol]||[];
@@ -646,8 +647,8 @@ function renderMarket(){
     const prev=prevPrices[s.symbol]; let flash='';
     if(prev!=null&&prev!==s.price)flash=s.price>prev?' flash-up':' flash-down';
     prevPrices[s.symbol]=s.price;
-    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+flash+'" data-sym="'+s.symbol+'" title="單擊選擇下單 · 點迷你走勢開圖">'
-      +'<div class="stock-head" title="'+(PX_NAMES[s.symbol]||s.name)+'">'+pxIconAnim(s.symbol,30)+'<span class="nick">'+(s.nickname||s.name)+'</span><span class="sym">'+s.symbol+'</span></div>'
+    return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+flash+'" data-sym="'+esc(s.symbol)+'" title="單擊選擇下單 · 點迷你走勢開圖">'
+      +'<div class="stock-head" title="'+esc(PX_NAMES[s.symbol]||s.name)+'">'+pxIconAnim(s.symbol,30)+'<span class="nick">'+esc(s.nickname||s.name)+'</span><span class="sym">'+esc(s.symbol)+'</span></div>'
       +'<div class="price">$'+fmt(s.price)+'</div>'
       +'<div class="chg-pill '+cls+'">'+(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(s.price-s.ref_price))+' ('+(chg>=0?'+':'')+chg.toFixed(2)+'%)</div>'
       +'<span class="spark-btn" title="點開 K 線圖">'+sparkline(hist,200,48,color)+'</span>'
@@ -656,7 +657,7 @@ function renderMarket(){
   grid.querySelectorAll('.stock-card').forEach(c=>{c.onclick=()=>{selected=c.dataset.sym;render();poll();};c.ondblclick=()=>openChart(c.dataset.sym);const sb=c.querySelector('.spark-btn');if(sb)sb.onclick=e=>{e.stopPropagation();openChart(c.dataset.sym);};}); // 單擊選擇下單，點迷你走勢或雙擊開圖
   // 底部跑馬燈：顯示所有股票價格（紅漲綠跌）
   const tk=$('#ticker-inner');
-  if(tk)tk.innerHTML=state.stocks.map(s=>{const chg=pct(s.price,s.ref_price);const cls=chg>=0?'color:var(--red)':'color:var(--green)';return '<span style="margin:0 18px"><b>'+s.symbol+'</b> <span style="'+cls+'">$'+fmt(s.price)+'</span> <span style="'+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span></span>';}).join('');
+  if(tk)tk.innerHTML=state.stocks.map(s=>{const chg=pct(s.price,s.ref_price);const cls=chg>=0?'color:var(--red)':'color:var(--green)';return '<span style="margin:0 18px"><b>'+esc(s.symbol)+'</b> <span style="'+cls+'">$'+fmt(s.price)+'</span> <span style="'+cls+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span></span>';}).join('');
   renderDetail();
 }
 
@@ -670,7 +671,7 @@ function renderDetail(){
   const color=chg>=0?'var(--red)':'var(--green)';
   // 只更新標題、走勢圖與盤口；下單表單維持不動，避免輪詢時搶走輸入框焦點
   const dn=s.nickname||s.name;
-  $('#detail-title').innerHTML=dn+' <span style="color:var(--dim); font-size:12px; font-weight:400">'+(dn!==s.name?s.name+' · ':'')+s.symbol+'</span> $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
+  $('#detail-title').innerHTML=esc(dn)+' <span style="color:var(--dim); font-size:12px; font-weight:400">'+(dn!==s.name?esc(s.name)+' · ':'')+esc(s.symbol)+'</span> $'+fmt(s.price)+' <span class="'+(chg>=0?'up':'down')+'">'+(chg>=0?'+':'')+chg.toFixed(2)+'%</span>';
   $('#ord-sym').innerHTML='下單 '+pxIconAnim(s.symbol,16);
   const vals=hist.map(p=>Number(p.price));
   const hi=vals.length?Math.max(...vals):s.price, lo=vals.length?Math.min(...vals):s.price;
@@ -740,7 +741,7 @@ function renderPortfolio(){
     ['總資產','$'+fmt((a.cash||0)+mv)]
   ].map(p=>'<div><div style="color:var(--dim); font-size:11px">'+p[0]+'</div><div style="color:var(--green); font-size:16px">'+p[1]+'</div></div>').join(''):'請先登入';
   const hb=$('#holdings-table tbody');
-  hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+h.symbol+' '+(h.nickname||h.name)+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>$'+fmt(h.market_value)+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--dim)">無持股</td></tr>';
+  hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+esc(h.symbol)+' '+esc(h.nickname||h.name)+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>$'+fmt(h.market_value)+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--dim)">無持股</td></tr>';
   const tb=$('#trades-table tbody');
   tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+fmtTime(t.created_at)+'</td><td>'+t.symbol+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無交易紀錄</td></tr>';
 }
@@ -754,7 +755,7 @@ function renderOrders(){
 
 function renderFills(){
   const fb=$('#fills-table tbody');
-  fb.innerHTML=(state.fills||[]).slice(0,30).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.symbol+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>'+f.buyer_name+(f.buyer_is_bot?' 🤖':'')+'</td><td>'+f.seller_name+(f.seller_is_bot?' 🤖':'')+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無成交</td></tr>';
+  fb.innerHTML=(state.fills||[]).slice(0,30).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.symbol+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>'+esc(f.buyer_name)+(f.buyer_is_bot?' 🤖':'')+'</td><td>'+esc(f.seller_name)+(f.seller_is_bot?' 🤖':'')+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無成交</td></tr>';
 }
 
 async function renderLeaderboard(){
@@ -763,20 +764,20 @@ async function renderLeaderboard(){
   $('#lb-table tbody').innerHTML=(r.players||[]).map((p,i)=>{
     const rank=i<3?'<span class="rank r'+(i+1)+'">'+(i+1)+'</span>':'<span class="rank">'+(i+1)+'</span>';
     const mine=me&&p.username===me?' style="background:rgba(255,210,63,.12)"':'';
-    return '<tr'+mine+'><td>'+rank+'</td><td>'+p.username+'</td><td>$'+fmt(p.total_assets)+'</td></tr>';
+    return '<tr'+mine+'><td>'+rank+'</td><td>'+esc(p.username)+'</td><td>$'+fmt(p.total_assets)+'</td></tr>';
   }).join('');
   const myIdx=(r.players||[]).findIndex(p=>p.username===me);
   const bar=$('#my-rank');
-  if(bar){bar.style.display=myIdx>=0?'':'none';bar.innerHTML=myIdx>=0?('我的排名 <b>#'+(myIdx+1)+'</b> ｜ '+me+' ｜ 總資產 <b>$'+fmt(r.players[myIdx].total_assets)+'</b>'):'';}
+  if(bar){bar.style.display=myIdx>=0?'':'none';bar.innerHTML=myIdx>=0?('我的排名 <b>#'+(myIdx+1)+'</b> ｜ '+esc(me)+' ｜ 總資產 <b>$'+fmt(r.players[myIdx].total_assets)+'</b>'):'';}
 }
 
 async function renderBots(){
   const r=await api('/api/bots');
   $('#bots-wrap').innerHTML=(r.bots||[]).map(b=>{
     const hs=(r.holdings||[]).filter(h=>h.account_id===b.id);
-    return '<div class="panel" style="padding:12px; margin-bottom:10px"><b style="color:var(--blue)">'+b.name+'</b> ('+b.bot_kind+') 現金 $'+fmt(b.cash)
+    return '<div class="panel" style="padding:12px; margin-bottom:10px"><b style="color:var(--blue)">'+esc(b.name)+'</b> ('+esc(b.bot_kind)+') 現金 $'+fmt(b.cash)
       +'<div style="color:var(--dim); font-size:10px; margin-top:6px">'
-      +(hs.map(h=>h.symbol+' '+h.shares+' 股').join('｜')||'無持股')+'</div></div>';
+      +(hs.map(h=>esc(h.symbol)+' '+h.shares+' 股').join('｜')||'無持股')+'</div></div>';
   }).join('');
 }
 

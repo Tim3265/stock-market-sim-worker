@@ -27,7 +27,7 @@ export async function runBotActivity(db){
  if(tick%3===0)await submit(1000001,side,1);
  if(tick%10===0){
   const whaleSym = symbols[(tick*2)%symbols.length];
-  const whaleSide = (tick%10<5)?'BUY':'SELL';
+  const whaleSide = (Math.floor(tick/10)%2===0)?'BUY':'SELL';
   const whaleQty = (['YZU','YOUJIAN'].includes(whaleSym)?40:70) + (tick%20);
   await submit(1000002, whaleSide, whaleQty, 'MARKET', null, 'whale-surge', whaleSym);
  }
