@@ -53,7 +53,7 @@ describe('Sprint 2: 市價單及造市商',()=>{
   await env.DB.prepare("INSERT INTO price_history(symbol,price,source,created_at) VALUES ('2330',900,'TRADE',datetime('now','-7 hours')),('2330',975,'TRADE',datetime('now','-5 minutes')),('2330',980,'TRADE',datetime('now','-1 minute')),('YZU',45,'TRADE',datetime('now'))").run();
   const r=await get('/api/history?symbol=2330');
   expect(r.status).toBe(200);
-  expect(r.body.history.map(point=>point.price)).toEqual([975,980]);
+  expect(r.body.history.map(point=>point.price)).toEqual([900,975,980]);
   const all=await get('/api/histories');
   expect(Object.keys(all.body.histories)).toHaveLength(6);
   expect(all.body.histories['2330'].map(point=>point.price)).toEqual([975,980]);

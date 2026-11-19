@@ -195,6 +195,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
   <div id="login-box" class="panel">
     <input id="nickname" maxlength="6" placeholder="輸入名字（留空隨機，最多 6 字）">
     <button id="btn-play" style="font-size:14px; padding:14px;">▶ 開始交易</button>
+    <a href="/admin" style="display:block;text-align:center;padding:12px;color:var(--txt)">後台</a>
     <div class="hint">名字 = 帳號 = 密碼：輸入同一個名字就會回到同一個帳戶（留空則隨機開戶）</div>
   </div>
 </div>
@@ -208,6 +209,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
     <span class="spacer"></span>
     <span id="user-chip" style="color:var(--dim)"></span>
     <button class="ghost" id="btn-recharge">重設資金</button>
+    <a href="/admin" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:inherit">後台</a>
     <button class="ghost" id="btn-logout">登出</button>
   </header>
   <main>

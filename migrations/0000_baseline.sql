@@ -34,3 +34,7 @@ CREATE TABLE IF NOT EXISTS trades (
 
 CREATE INDEX IF NOT EXISTS idx_trades_account ON trades(account_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
+-- The three original market symbols are also required on a brand-new database.
+-- Existing rows are retained without changing their price or other data.
+INSERT OR IGNORE INTO stocks (symbol,name,price) VALUES
+  ('2330','台積電',980),('2317','鴻海',205),('2454','聯發科',1290);
