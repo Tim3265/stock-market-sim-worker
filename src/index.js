@@ -4,6 +4,7 @@
 //
 // 商業規則在 src/domain/*，SQL 在 src/db/queries.js，前端在 src/page.js。
 
+import { adminRoute, recordLogin } from './admin.js';
 import * as queries from "./db/queries.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
@@ -40,6 +41,8 @@ export default {
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
+  const adminResponse = await adminRoute(request, env, path);
+  if (adminResponse) return adminResponse;
   const upgraded = path.startsWith('/api/') && await isUpgraded(env.DB);
   noteRequest();
   if (upgraded) { const ticked = await maybeTick(env.DB, Date.now(), tickIntervalMs()); await matchCrossed(env.DB); if (ticked) await runBotActivity(env.DB); }
@@ -51,6 +54,7 @@ async function route(request, env) {
     if(!await auth.allowAttempt(env.DB,request))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
     const input = await request.json().catch(() => ({}));
     const result = await auth.guestLogin(env.DB, input.nickname);
+    await recordLogin(env.DB,request,result,'guest',input.nickname);
     const secure = url.protocol === 'https:' ? '; Secure' : '';
     return Response.json({ ok: true, username: result.username }, {
       headers: { 'Set-Cookie': 'stock_session=' + result.token + '; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800' + secure }
@@ -264,7 +268,7 @@ async function route(request, env) {
     const symbol = url.searchParams.get('symbol') || '';
     const stock = await env.DB.prepare('SELECT symbol, price FROM stocks WHERE symbol=?').bind(symbol).first();
     if (!stock) return fail('NOT_FOUND', '沒有這檔股票');
-    const rows = await env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(symbol).all();
+    const rows = await env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 500").bind(symbol).all();
     const fills = await env.DB.prepare(`SELECT f.id,f.shares,f.price,f.amount,f.created_at,b.name buyer_name,se.name seller_name
       FROM order_fills f JOIN accounts b ON b.id=f.buyer_id JOIN accounts se ON se.id=f.seller_id
       WHERE f.symbol=? AND f.created_at>=datetime('now','-6 hours') ORDER BY f.id DESC LIMIT 20`).bind(symbol).all();
