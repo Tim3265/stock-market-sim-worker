@@ -10,7 +10,7 @@ import * as queries from "./db/queries.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
 import { PAGE_HTML } from "./page.js";
-import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed } from './domain/orders.js';
+import { book, placeMarketOrder, listOrders, cancelOrder, matchCrossed, backoff, MAX_ATTEMPTS } from './domain/orders.js';
 import { maybeTick } from './domain/marketMaker.js';
 import * as auth from './domain/auth.js';
 import { runBotActivity } from './domain/botActivity.js';
@@ -26,6 +26,32 @@ async function isUpgraded(db) {
   return !!row;
 }
 const MAX_TRADE_LIMIT = 100;
+
+// 看盤資料（股價、委託簿、指數、走勢）人人相同：同一個 Worker 執行個體內快取 2 秒，
+// 40 人同時輪詢時只有少數請求真的去查資料庫，避免 D1「10 秒內用量過多」被擋。
+// 個人資料（現金、持股、委託）不快取；本執行個體有寫入（下單、撤單、推進市場）就清空。
+const liveCache = new Map();
+
+// 同一個 Worker 執行個體內，下單／撤單／重設資金一次只處理一筆（排隊）。
+// 多筆同時寫入會互相讓對方的版本號失效、整筆重做；排隊後幾乎都一次成功，
+// 資料庫少做很多白工。排隊等待不算 CPU 時間。
+let writeChain = Promise.resolve();
+function serialized(fn) {
+  const run = writeChain.then(fn, fn);
+  writeChain = run.catch(() => {});
+  return run;
+}
+function liveCacheTtl(env) { const n = Number(env.LIVE_CACHE_MS ?? 2000); return Number.isFinite(n) && n > 0 ? n : 0; }
+async function cachedLive(env, key, load) {
+  const ttl = liveCacheTtl(env);
+  if (!ttl) return load();
+  const hit = liveCache.get(key), now = Date.now();
+  if (hit && now - hit.at < ttl) return hit.value;
+  const value = load();
+  liveCache.set(key, { at: now, value });
+  value.catch(() => liveCache.delete(key));
+  return value;
+}
 
 export default {
   async fetch(request, env) {
@@ -46,7 +72,8 @@ async function route(request, env) {
   if (adminResponse) return adminResponse;
   const upgraded = path.startsWith('/api/') && await isUpgraded(env.DB);
   noteRequest();
-  if (upgraded) { const ticked = await maybeTick(env.DB, Date.now(), tickIntervalMs()); await matchCrossed(env.DB); if (ticked) await runBotActivity(env.DB); }
+  if (!['GET', 'HEAD'].includes(request.method)) liveCache.clear();
+  if (upgraded) { const ticked = await maybeTick(env.DB, Date.now(), tickIntervalMs()); if (ticked) liveCache.clear(); await matchCrossed(env.DB); if (ticked) await runBotActivity(env.DB); }
   if (path.startsWith('/api/') && !['GET','HEAD'].includes(request.method)) {
     const origin=request.headers.get('Origin');
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
@@ -68,7 +95,8 @@ async function route(request, env) {
     const initialCash = await auth.marketInitialCash(env.DB);
     // 重設＝重新開始：現金與本金都回到目前的起始金額，損益從 0 算起。先撤銷未成交委託、清空凍結，避免 frozen_cash > cash 觸發 CHECK。
     let done = false;
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      await backoff(attempt);
       const version = await env.DB.prepare('SELECT match_seq FROM market_state WHERE id=1').first();
       try {
         await env.DB.batch([
@@ -93,10 +121,9 @@ async function route(request, env) {
     const light = url.searchParams.get('light') === '1'; // 市場分頁只拿看盤需要的資料
     const tradeSide = url.searchParams.get('trade_side') || '';
     if (tradeSide && !['BUY', 'SELL'].includes(tradeSide)) return fail('INVALID_INPUT','篩選條件錯誤');
-    let stocks = await queries.listStocks(env.DB);
-    if (upgraded) {
-      stocks = (await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
-    }
+    const stocks = await cachedLive(env, 'stocks', async () => upgraded
+      ? (await env.DB.prepare("SELECT symbol,name,nickname,price,ref_price FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results
+      : queries.listStocks(env.DB));
     const session = await auth.session(env.DB, request);
     let account = null, holdings = [], orders = [], trades = [];
     if (session) {
@@ -126,26 +153,29 @@ async function route(request, env) {
         account.available_cash = account.availableCash;
       }
     }
-    const bookResult = await book(env.DB, symbol);
-    const fills = upgraded && !light ? (await env.DB.prepare(`
-      SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
-             b.name as buyer_name, b.is_bot as buyer_is_bot,
-             se.name as seller_name, se.is_bot as seller_is_bot
-      FROM order_fills f
-      JOIN stocks s ON s.symbol = f.symbol
-      JOIN accounts b ON b.id = f.buyer_id
-      JOIN accounts se ON se.id = f.seller_id
-      ORDER BY f.id DESC LIMIT 30
-    `).all()).results : [];
-    const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
-    const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 24").bind(sym)) : [];
-    const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
-    const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
-    const indexInfo = upgraded ? await computeIndex(env.DB) : null;
+    const { bookResult, fills, state, indexInfo, indexHistory, histories } = await cachedLive(env, 'market|' + symbol + '|' + (light ? 1 : 0), async () => {
+      const bookResult = await book(env.DB, symbol);
+      const fills = upgraded && !light ? (await env.DB.prepare(`
+        SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
+               b.name as buyer_name, b.is_bot as buyer_is_bot,
+               se.name as seller_name, se.is_bot as seller_is_bot
+        FROM order_fills f
+        JOIN stocks s ON s.symbol = f.symbol
+        JOIN accounts b ON b.id = f.buyer_id
+        JOIN accounts se ON se.id = f.seller_id
+        ORDER BY f.id DESC LIMIT 30
+      `).all()).results : [];
+      const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
+      const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 24").bind(sym)) : [];
+      const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
+      const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
+      const indexInfo = upgraded ? await computeIndex(env.DB) : null;
+      const indexHistory = upgraded ? (await env.DB.prepare("SELECT value AS price, created_at FROM index_history ORDER BY id DESC LIMIT 60").all()).results.reverse() : [];
+      const histories = upgraded ? Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()])) : {};
+      return { bookResult, fills, state, indexInfo, indexHistory, histories };
+    });
     const index = indexInfo ? indexInfo.value : null;
-    const indexHistory = upgraded ? (await env.DB.prepare("SELECT value AS price, created_at FROM index_history ORDER BY id DESC LIMIT 60").all()).results.reverse() : [];
     const events = getActiveEvents(state?.tick_count || 0);
-    const histories = upgraded ? Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()])) : {};
     return ok({
       stocks,
       account,
@@ -309,12 +339,12 @@ async function route(request, env) {
   }
   const cancelMatch=path.match(/^\/api\/orders\/(\d+)$/);
   if (cancelMatch && request.method === 'DELETE') {
-    const result=await cancelOrder(env.DB,current.account_id,Number(cancelMatch[1]));
+    const result=await serialized(()=>cancelOrder(env.DB,current.account_id,Number(cancelMatch[1])));
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
   if (path === '/api/orders' && request.method === 'POST') {
     let input;try{input=await request.json();}catch{return fail('INVALID_INPUT','請求內容必須是 JSON');}
-    const result=await placeMarketOrder(env.DB,{...input,account_id:current.account_id});
+    const result=await serialized(()=>placeMarketOrder(env.DB,{...input,account_id:current.account_id}));
     return result.ok ? ok(result) : fail(result.code,result.message);
   }
 

@@ -4,6 +4,11 @@
   "main": "src/index.js",
   "compatibility_date": "2026-11-01",
 
+  // 讓 Worker 在資料庫旁邊執行：每個請求要查資料庫十幾次，
+  // 從台灣連到日本的 D1 每次來回約 0.1 秒，放到同一區後看盤從 2.2 秒降到約 0.5 秒。
+  // 請改成你的 D1 所在地區（線上資料庫在東京：aws:ap-northeast-1）。
+  "placement": { "region": "aws:ap-northeast-1" },
+
   // 這就是「Worker + D1」的接線：
   // 把 D1 資料庫綁定到程式裡的 env.DB
   "d1_databases": [
