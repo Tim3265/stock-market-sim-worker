@@ -64,10 +64,10 @@ export async function matchCrossed(db){
    prepare(db,"INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(?,?,'BUY',?,?,?,?)",pair.buyer,pair.symbol,shares,price,amount,buyerFee),
    prepare(db,"INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(?,?,'SELL',?,?,?,?)",pair.seller,pair.symbol,shares,price,amount,sellerFee),
    prepare(db,'UPDATE accounts SET cash=ROUND(cash-?-?,2),frozen_cash=ROUND(frozen_cash-?,2) WHERE id=?',amount,buyerFee,reserved,pair.buyer),
-   prepare(db,'UPDATE holdings SET shares=shares-?,frozen_shares=frozen_shares-? WHERE account_id=? AND symbol=?',shares,shares,pair.seller,pair.symbol),
+   prepare(db,'UPDATE holdings SET shares=shares-?,frozen_shares=frozen_shares-?,cost=CASE WHEN shares>0 THEN ROUND(cost*(shares-?)/shares,2) ELSE 0 END WHERE account_id=? AND symbol=?',shares,shares,shares,pair.seller,pair.symbol),
    prepare(db,'UPDATE accounts SET cash=ROUND(cash+?-?,2) WHERE id=?',amount,sellerFee,pair.seller),
    prepare(db,'UPDATE fee_revenue SET amount=ROUND(amount+?+?,2) WHERE id=1',buyerFee,sellerFee),
-   prepare(db,'INSERT INTO holdings(account_id,symbol,shares) VALUES(?,?,?) ON CONFLICT(account_id,symbol) DO UPDATE SET shares=shares+excluded.shares',pair.buyer,pair.symbol,shares),
+   prepare(db,'INSERT INTO holdings(account_id,symbol,shares,cost) VALUES(?,?,?,?) ON CONFLICT(account_id,symbol) DO UPDATE SET shares=shares+excluded.shares,cost=ROUND(cost+excluded.cost,2)',pair.buyer,pair.symbol,shares,money(cents(amount)+cents(buyerFee))),
    prepare(db,"UPDATE orders SET filled_shares=filled_shares+?,status=CASE WHEN filled_shares+?=shares THEN 'FILLED' ELSE 'PARTIAL' END WHERE id IN (?,?)",shares,shares,pair.bid_id,pair.ask_id),
    prepare(db,'INSERT INTO order_fills(maker_order_id,taker_order_id,buyer_id,seller_id,symbol,shares,price,amount) VALUES(?,?,?,?,?,?,?,?)',maker,taker,pair.buyer,pair.seller,pair.symbol,shares,price,amount),
    prepare(db,'UPDATE stocks SET price=? WHERE symbol=?',price,pair.symbol),
@@ -128,17 +128,17 @@ export async function placeMarketOrder(db,input){
    ops.push(prepare(db,"INSERT INTO trades(account_id,symbol,side,shares,price,amount,fee_amount) VALUES(?,?,'SELL',?,?,?,?)",seller,symbol,f.shares,f.price,amount,sellerFee));
    if(side==='BUY'){
     ops.push(prepare(db,'UPDATE accounts SET cash=ROUND(cash-?-?,2) WHERE id=?',amount,buyerFee,buyer));
-    ops.push(prepare(db,'UPDATE holdings SET shares=shares-?,frozen_shares=frozen_shares-? WHERE account_id=? AND symbol=?',f.shares,f.shares,seller,symbol));
+    ops.push(prepare(db,'UPDATE holdings SET shares=shares-?,frozen_shares=frozen_shares-?,cost=CASE WHEN shares>0 THEN ROUND(cost*(shares-?)/shares,2) ELSE 0 END WHERE account_id=? AND symbol=?',f.shares,f.shares,f.shares,seller,symbol));
    }else{
     // 逐筆釋放採用「成交前後預扣差額」（reserve(before)-reserve(after)），
     // 多次部分成交的手續費總和恰好等於下單時凍結的金額，不會多扣或少扣。
     const reserve=money(reserveCents);
     ops.push(prepare(db,'UPDATE accounts SET cash=ROUND(cash-?-?,2),frozen_cash=ROUND(frozen_cash-?,2) WHERE id=?',amount,buyerFee,reserve,buyer));
-    ops.push(prepare(db,'UPDATE holdings SET shares=shares-? WHERE account_id=? AND symbol=?',f.shares,seller,symbol));
+    ops.push(prepare(db,'UPDATE holdings SET shares=shares-?,cost=CASE WHEN shares>0 THEN ROUND(cost*(shares-?)/shares,2) ELSE 0 END WHERE account_id=? AND symbol=?',f.shares,f.shares,seller,symbol));
    }
    ops.push(prepare(db,'UPDATE accounts SET cash=ROUND(cash+?-?,2) WHERE id=?',amount,sellerFee,seller));
    ops.push(prepare(db,'UPDATE fee_revenue SET amount=ROUND(amount+?+?,2) WHERE id=1',buyerFee,sellerFee));
-   ops.push(prepare(db,'INSERT INTO holdings(account_id,symbol,shares) VALUES(?,?,?) ON CONFLICT(account_id,symbol) DO UPDATE SET shares=shares+excluded.shares',buyer,symbol,f.shares));
+   ops.push(prepare(db,'INSERT INTO holdings(account_id,symbol,shares,cost) VALUES(?,?,?,?) ON CONFLICT(account_id,symbol) DO UPDATE SET shares=shares+excluded.shares,cost=ROUND(cost+excluded.cost,2)',buyer,symbol,f.shares,money(cents(amount)+cents(buyerFee))));
    ops.push(prepare(db,"UPDATE orders SET filled_shares=filled_shares+?,status=CASE WHEN filled_shares+?=shares THEN 'FILLED' ELSE 'PARTIAL' END WHERE id=?",f.shares,f.shares,f.orderId));
    ops.push(prepare(db,'INSERT INTO order_fills(maker_order_id,taker_order_id,buyer_id,seller_id,symbol,shares,price,amount) VALUES(?,(SELECT id FROM orders WHERE request_id=?),?,?,?,?,?,?)',f.orderId,requestId,buyer,seller,symbol,f.shares,f.price,amount));
    ops.push(prepare(db,'UPDATE stocks SET price=? WHERE symbol=?',f.price,symbol));

@@ -43,6 +43,19 @@ export async function snapshot(db, accountId) {
     frozenCash = Number(accRow?.frozen_cash ?? 0);
   } catch { /* v1 schema 無 frozen_cash 欄位 */ }
   account.frozenCash = frozenCash;
+  // 持股成本（0016 之後才有 cost 欄位）：算出均價與未實現損益。
+  try {
+    const rows = (await db.prepare('SELECT symbol,cost FROM holdings WHERE account_id=?').bind(accountId).all()).results;
+    const costBySymbol = Object.fromEntries(rows.map(r => [r.symbol, Number(r.cost)]));
+    for (const h of holdings) {
+      const cost = costBySymbol[h.symbol];
+      if (!(cost > 0) || !(Number(h.shares) > 0)) continue;
+      h.cost = round2(cost);
+      h.avg_cost = round2(cost / Number(h.shares));
+      h.unrealized = round2(Number(h.market_value) - cost);
+      h.unrealized_pct = round2((Number(h.market_value) - cost) / cost * 100);
+    }
+  } catch { /* v1 schema 無 cost 欄位 */ }
   account.availableCash = Math.round((Number(account.cash) - frozenCash) * 100) / 100;
   const summary = computeSummary({
     cash: account.cash,

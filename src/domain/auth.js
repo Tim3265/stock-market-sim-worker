@@ -7,13 +7,14 @@ async function derive(password,salt){
  const key=await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveBits']);
  return hex(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:bytes(salt),iterations:100000},key,256));
 }
-export async function allowAttempt(db,request,scope='auth'){
+// limit：同一個 IP 每 5 分鐘最多幾次。名字登入另外計算且較寬，避免整班同學共用學校網路時被擋。
+export async function allowAttempt(db,request,scope='auth',limit=15){
  const address=request.headers.get('CF-Connecting-IP')||'local';
  const key=await digest(address+':'+scope),now=Date.now(),windowStart=now-300000;
  if(Math.random()<0.02)await db.prepare('DELETE FROM auth_rate_limits WHERE window_start<?').bind(now-3600000).run();
  const row=await db.prepare(`INSERT INTO auth_rate_limits(key_hash,window_start,attempts) VALUES(?,?,1)
  ON CONFLICT(key_hash) DO UPDATE SET attempts=CASE WHEN window_start<? THEN 1 ELSE attempts+1 END,window_start=CASE WHEN window_start<? THEN excluded.window_start ELSE window_start END RETURNING attempts`).bind(key,now,windowStart,windowStart).first();
- return row.attempts<=15;
+ return row.attempts<=limit;
 }
 function same(a,b){if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;}
 async function newAccountId(db){

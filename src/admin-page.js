@@ -17,14 +17,13 @@ input,select{background:#10141e;border:1px solid #536078;color:white;max-width:1
 .row{padding:12px 0;border-bottom:1px solid var(--line);display:flex;gap:12px;justify-content:space-between;align-items:flex-start}.row:last-child{border:0;padding-bottom:0}
 .row.click{cursor:pointer}.row.click:hover{background:#202a3b}.row strong{display:block;font-size:15px}.row small{display:block;color:var(--dim);font-size:12px;margin-top:5px;line-height:1.5;overflow-wrap:anywhere}
 .value{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.tag{display:inline-block;font-size:11px;font-weight:400;border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-left:6px;color:var(--dim);vertical-align:middle}
-.empty{color:var(--dim);font-size:14px;margin:10px 0 0}.error{color:#ffaaaa}#message{color:var(--dim);font-size:14px}form{display:flex;gap:8px;flex-wrap:wrap}form[hidden]{display:none}
-</style></head><body><main data-local-admin="false">
+.empty{color:var(--dim);font-size:14px;margin:10px 0 0}.error{color:#ffaaaa}#message{color:var(--dim);font-size:14px}
+</style></head><body><main>
 <header><div><h1>管理後台</h1><div class="hint">玩家、歷史紀錄與系統狀態</div></div><div class="links"><button class="ghost" id="refresh" type="button">重新整理</button><a href="/">返回遊戲</a></div></header>
-<form id="login"><input id="key" type="password" autocomplete="off" placeholder="管理密碼" required aria-label="管理密碼"><button>進入後台</button></form>
 <p id="message" role="status">正在載入…</p><div id="content"></div></main>
 <script>
-var form=document.querySelector('#login'),local=document.querySelector('main').dataset.localAdmin==='true',message=document.querySelector('#message'),root=document.querySelector('#content');
-var adminKey='',overviewData=null,query='',sortBy='login';
+var message=document.querySelector('#message'),root=document.querySelector('#content');
+var overviewData=null,query='',sortBy='login';
 function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 function money(n){return '$'+Number(n||0).toLocaleString('zh-TW',{maximumFractionDigits:2})}
 function parseUtc(s){if(!s)return null;var d=new Date(String(s).replace(' ','T')+'Z');return Number.isNaN(d.getTime())?null:d}
@@ -41,7 +40,7 @@ function ret(p){var init=Number(p.initial_cash||0);return init>0?(total(p)-init)
 function pctText(v){var t=Math.abs(v).toFixed(2);return (Number(t)===0?'':v>0?'+':'-')+t+'%'}
 function trendClass(v){return Math.abs(v)<0.005?null:v>0?'up':'down'}
 function methodName(m){return m==='guest'?'名字登入':m==='password'?'密碼登入':m}
-async function api(path){var r=await fetch(path,{headers:adminKey?{Authorization:'Bearer '+adminKey}:{},cache:'no-store'});if(r.status===401||r.status===429){form.hidden=local;throw Error(r.status===429?'嘗試太多次，請稍後再試。':'無法進入後台，請確認管理密碼。')}if(!r.ok)throw Error('載入失敗（'+r.status+'）');return r.json()}
+async function api(path){var r=await fetch(path,{cache:'no-store'});var d=await r.json().catch(function(){return null});if(!r.ok)throw Error((d&&d.message)||'載入失敗（'+r.status+'）');return d}
 
 function renderStatus(s){
  var box=panel('系統狀態','開啟後台的時間：'+new Date().toLocaleTimeString('zh-TW',{hour12:false})),g=el('div','tiles');box.append(g);
@@ -76,12 +75,12 @@ function renderLogins(logins,title,hint){
 }
 async function showOverview(){
  message.textContent='正在載入…';message.className='';
- try{overviewData=await api('/api/admin/overview');root.replaceChildren();renderStatus(overviewData.status);renderPlayers(overviewData.players);renderLogins(overviewData.logins);message.textContent='';form.hidden=true}
+ try{overviewData=await api('/api/admin/overview');root.replaceChildren();renderStatus(overviewData.status);renderPlayers(overviewData.players);renderLogins(overviewData.logins);message.textContent=''}
  catch(e){message.className='error';message.textContent=e.message}
 }
 async function showPlayer(id){
  message.textContent='正在載入玩家資料…';message.className='';
- try{var d=await api('/api/admin/player?id='+encodeURIComponent(id)),p=d.player;root.replaceChildren();form.hidden=true;message.textContent='';
+ try{var d=await api('/api/admin/player?id='+encodeURIComponent(id)),p=d.player;root.replaceChildren();message.textContent='';
   var back=el('button','ghost','← 返回玩家列表');back.type='button';back.onclick=function(){location.hash=''};root.append(back);
   var box=panel(p.name+(p.is_guest?'（訪客）':''),'帳戶 #'+p.id+' · 建立於 '+time(p.created_at)),g=el('div','tiles');box.append(g);var r=ret(p);
   tile(g,'總資產',money(total(p)),'本金 '+money(p.initial_cash));tile(g,'報酬率',pctText(r),null,trendClass(r));tile(g,'現金',money(p.cash));tile(g,'持股市值',money(p.stock_value));tile(g,'交易次數',(p.trade_count||0)+' 次','最後 '+agoStr(p.last_trade_at));tile(g,'最近登入',agoStr(p.last_login_at),time(p.last_login_at));
@@ -93,6 +92,5 @@ async function showPlayer(id){
 }
 function route(){var m=/^#player=(\\d+)$/.exec(location.hash);if(m)showPlayer(m[1]);else showOverview()}
 window.onhashchange=route;document.querySelector('#refresh').onclick=route;
-form.onsubmit=function(e){e.preventDefault();adminKey=document.querySelector('#key').value;document.querySelector('#key').value='';route()};
-if(local){form.hidden=true;route()}else{message.textContent='請輸入管理密碼';}
+route();
 </script></body></html>`;

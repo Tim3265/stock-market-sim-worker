@@ -52,7 +52,7 @@ async function route(request, env) {
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
   }
   if (path === '/api/auth/guest' && request.method === 'POST') {
-    if(!await auth.allowAttempt(env.DB,request))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
+    if(!await auth.allowAttempt(env.DB,request,'guest',120))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
     const input = await request.json().catch(() => ({}));
     const result = await auth.guestLogin(env.DB, input.nickname);
     await recordLogin(env.DB,request,result,'guest',input.nickname);
@@ -66,7 +66,7 @@ async function route(request, env) {
     const current = await auth.session(env.DB, request);
     if (!current) return fail('UNAUTHENTICATED', '請先登入');
     const initialCash = await auth.marketInitialCash(env.DB);
-    // 只補現金，不動 initial_cash，報酬率基準維持不變。先撤銷未成交委託、清空凍結，避免 frozen_cash > cash 觸發 CHECK。
+    // 重設＝重新開始：現金與本金都回到目前的起始金額，損益從 0 算起。先撤銷未成交委託、清空凍結，避免 frozen_cash > cash 觸發 CHECK。
     let done = false;
     for (let attempt = 0; attempt < 4; attempt++) {
       const version = await env.DB.prepare('SELECT match_seq FROM market_state WHERE id=1').first();
@@ -78,7 +78,7 @@ async function route(request, env) {
           env.DB.prepare('UPDATE accounts SET frozen_cash=0 WHERE id=?').bind(current.account_id),
           env.DB.prepare('UPDATE holdings SET frozen_shares=0 WHERE account_id=?').bind(current.account_id),
           env.DB.prepare('DELETE FROM holdings WHERE account_id=?').bind(current.account_id),
-          env.DB.prepare('UPDATE accounts SET cash=? WHERE id=?').bind(initialCash, current.account_id),
+          env.DB.prepare('UPDATE accounts SET cash=?,initial_cash=? WHERE id=?').bind(initialCash, initialCash, current.account_id),
           env.DB.prepare('DELETE FROM transaction_guard'),
         ]);
         done = true;
