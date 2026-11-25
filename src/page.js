@@ -319,7 +319,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
       </div>
       <canvas id="k-canvas" width="840" height="380"></canvas>
       <div id="k-info" style="color:var(--dim); font-size:12px; margin:6px 0 10px; min-height:16px">尚無資料</div>
-      <details open><summary style="cursor:pointer; color:var(--dim); font-size:13px; margin-bottom:8px">歷史成交紀錄（近 6 小時）</summary>
+      <details open><summary style="cursor:pointer; color:var(--dim); font-size:13px; margin-bottom:8px">最近成交紀錄（最近 20 筆）</summary>
         <table id="k-fills-table"><thead><tr><th>時間</th><th>股數</th><th>價格</th><th>金額</th><th>買方</th><th>賣方</th></tr></thead><tbody></tbody></table>
       </details>
     </div>
@@ -462,7 +462,7 @@ async function openChart(sym){
   if(!h||!h.ok){$('#k-info').textContent='載入失敗';return;}
   kCandles=buildCandles(h.history,h.fills||[]); kHover=-1; kMouseY=null; kDrag=null;
   setRange(kRange);
-  $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+esc(f.buyer_name)+'</td><td>'+esc(f.seller_name)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">近 6 小時無成交</td></tr>';
+  $('#k-fills-table tbody').innerHTML=(h.fills||[]).map(f=>'<tr><td>'+fmtTime(f.created_at)+'</td><td>'+f.shares+'</td><td>$'+fmt(f.price)+'</td><td>$'+fmt(f.amount)+'</td><td>'+esc(f.buyer_name)+'</td><td>'+esc(f.seller_name)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">尚無成交</td></tr>';
   drawChart();
 }
 function closeChart(){$('#chart-modal').classList.add('hidden'); document.body.style.overflow='';}
@@ -498,7 +498,7 @@ function drawChart(){
   ctx.fillStyle='#0b0e1a'; ctx.fillRect(0,0,cw,ch);
   const L=8,R=58,T=12,B=22,pw=cw-L-R,ph=ch-T-B;
   const n=kCandles.length;
-  if(!n){$('#k-info').textContent='近 6 小時無價格資料';kLayout=null;return;}
+  if(!n){$('#k-info').textContent='尚無價格資料';kLayout=null;return;}
   clampView();
   const vis=kCandles.slice(kStart,kStart+kCount), m=vis.length;
   let min=Infinity,max=-Infinity;
@@ -623,7 +623,7 @@ function render(){
     const h=state.indexHistory;
     const chgEl=$('#index-chg');
     if(h&&h.length>1){
-      const c=pct(state.index,h[0].price);
+      const c=pct(state.index,state.indexBase??h[0].price);
       chgEl.textContent=(c>=0?'+':'')+c.toFixed(2)+'%';
       chgEl.className=c>=0?'up':'down';
     }

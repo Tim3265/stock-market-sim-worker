@@ -5,6 +5,7 @@
 // 商業規則在 src/domain/*，SQL 在 src/db/queries.js，前端在 src/page.js。
 
 import { adminRoute, recordLogin } from './admin.js';
+import { indexBaseFor, taipeiDate } from "./domain/indexBase.js";
 import * as queries from "./db/queries.js";
 import { snapshot } from "./domain/portfolio.js";
 import { fail, ok } from "./http.js";
@@ -137,11 +138,12 @@ async function route(request, env) {
       ORDER BY f.id DESC LIMIT 30
     `).all()).results : [];
     const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
-    const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 24").bind(sym)) : [];
+    const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 24").bind(sym)) : [];
     const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
-    const index = upgraded ? await computeIndex(env.DB) : null;
-    const indexHistory = upgraded ? (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 60").all()).results.reverse() : [];
+    const indexInfo = upgraded ? await computeIndex(env.DB) : null;
+    const index = indexInfo ? indexInfo.value : null;
+    const indexHistory = upgraded ? (await env.DB.prepare("SELECT value AS price, created_at FROM index_history ORDER BY id DESC LIMIT 60").all()).results.reverse() : [];
     const events = getActiveEvents(state?.tick_count || 0);
     const histories = upgraded ? Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()])) : {};
     return ok({
@@ -155,6 +157,7 @@ async function route(request, env) {
       ...(light?{}:{fills}),
       events,
       index,
+      indexBase: indexInfo ? indexInfo.base : null,
       indexHistory,
       pollMs: pollMs(),
       histories,
@@ -163,9 +166,9 @@ async function route(request, env) {
   }
   if (path === '/api/index' && request.method === 'GET') {
 
-    const index = await computeIndex(env.DB);
-    const history = (await env.DB.prepare("SELECT value AS price, created_at FROM index_history WHERE created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 120").all()).results.reverse();
-    return ok({ index, history });
+    const indexInfo = await computeIndex(env.DB);
+    const history = (await env.DB.prepare("SELECT value AS price, created_at FROM index_history ORDER BY id DESC LIMIT 120").all()).results.reverse();
+    return ok({ index: indexInfo.value, indexBase: indexInfo.base, history });
   }
   if (path === '/api/events' && request.method === 'GET') {
     const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
@@ -211,6 +214,7 @@ async function route(request, env) {
     if(!await auth.allowAttempt(env.DB,request))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
     const input=await request.json().catch(()=>({}));
     const result=await auth.login(env.DB,input.username,input.password);
+    await recordLogin(env.DB,request,result,'password',input.username);
     if(!result)return fail('UNAUTHENTICATED','帳號或密碼錯誤');
     const secure=url.protocol==='https:'?'; Secure':'';
     return Response.json({ok:true,username:result.username},{headers:{'Set-Cookie':'stock_session='+result.token+'; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800'+secure}});
@@ -229,7 +233,7 @@ async function route(request, env) {
 
   if (path === '/api/histories' && request.method === 'GET') {
     const stocks = (await env.DB.prepare("SELECT symbol FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN') ORDER BY symbol").all()).results;
-    const queries = stocks.map(stock => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? AND created_at >= datetime('now','-6 hours') ORDER BY id DESC LIMIT 500").bind(stock.symbol));
+    const queries = stocks.map(stock => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 500").bind(stock.symbol));
     const rows = queries.length ? await env.DB.batch(queries) : [];
     return ok({ histories: Object.fromEntries(stocks.map((stock,i)=>[stock.symbol,rows[i].results.reverse()])) });
   }
@@ -244,7 +248,7 @@ async function route(request, env) {
     const symbol=url.searchParams.get('symbol')||'';
     if(!symbol)return fail('INVALID_INPUT','請提供 symbol');
     const rows=(await env.DB.prepare(`SELECT strftime('%Y-%m-%d %H:%M',created_at) minute, SUM(shares) volume, COUNT(*) trades
-      FROM order_fills WHERE symbol=? AND created_at>=datetime('now','-6 hours')
+      FROM (SELECT shares,created_at FROM order_fills WHERE symbol=? ORDER BY id DESC LIMIT 500)
       GROUP BY minute ORDER BY minute`).bind(symbol).all()).results;
     return ok({symbol,volume:rows});
   }
@@ -271,7 +275,7 @@ async function route(request, env) {
     const rows = await env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 500").bind(symbol).all();
     const fills = await env.DB.prepare(`SELECT f.id,f.shares,f.price,f.amount,f.created_at,b.name buyer_name,se.name seller_name
       FROM order_fills f JOIN accounts b ON b.id=f.buyer_id JOIN accounts se ON se.id=f.seller_id
-      WHERE f.symbol=? AND f.created_at>=datetime('now','-6 hours') ORDER BY f.id DESC LIMIT 20`).bind(symbol).all();
+      WHERE f.symbol=? ORDER BY f.id DESC LIMIT 20`).bind(symbol).all();
     return ok({ stock, history: rows.results.reverse(), fills: fills.results });
   }
 
@@ -395,7 +399,9 @@ async function getTrades(env, url, accountId) {
 // 以流動性為權重、當日參考價為基期（1000點），反映六檔整體漲跌。
 async function computeIndex(db) {
   const stocks = (await db.prepare("SELECT symbol,price,ref_price,ref_date,liquidity FROM stocks WHERE symbol IN ('2330','2317','2454','3711','YZU','YOUJIAN')").all()).results;
-  const date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const date = taipeiDate(Date.now());
+  const state = await db.prepare('SELECT index_base,index_base_date FROM market_state WHERE id=1').first();
+  const indexBase = (await indexBaseFor(db, state, date)).value;
   let base = 0, cur = 0;
   for (const s of stocks) {
     const w = Number(s.liquidity) || 0;
@@ -403,6 +409,7 @@ async function computeIndex(db) {
     base += w * ref;
     cur += w * Number(s.price);
   }
-  return base > 0 ? Math.round(1000 * cur / base * 100) / 100 : 1000;
+  const value = base > 0 ? Math.round(indexBase * cur / base * 100) / 100 : indexBase;
+  return { value, base: indexBase };
 }
 

@@ -49,14 +49,14 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect((await get('/api/stocks')).status).toBe(200);
   expect(await env.DB.prepare("SELECT account_id,side,type FROM orders WHERE request_id='bot-value-YZU-tick-10'").first()).toEqual({account_id:1000002,side:'SELL',type:'LIMIT'});
  });
- it('走勢只提供該股票最近六小時的真實成交紀錄，依時間順序回傳',async()=>{
+ it('走勢保留過去的真實成交紀錄（不因時間久遠而消失），依時間順序回傳',async()=>{
   await env.DB.prepare("INSERT INTO price_history(symbol,price,source,created_at) VALUES ('2330',900,'TRADE',datetime('now','-7 hours')),('2330',975,'TRADE',datetime('now','-5 minutes')),('2330',980,'TRADE',datetime('now','-1 minute')),('YZU',45,'TRADE',datetime('now'))").run();
   const r=await get('/api/history?symbol=2330');
   expect(r.status).toBe(200);
   expect(r.body.history.map(point=>point.price)).toEqual([900,975,980]);
   const all=await get('/api/histories');
   expect(Object.keys(all.body.histories)).toHaveLength(6);
-  expect(all.body.histories['2330'].map(point=>point.price)).toEqual([975,980]);
+  expect(all.body.histories['2330'].map(point=>point.price)).toEqual([900,975,980]);
   expect(all.body.histories.YZU.map(point=>point.price)).toEqual([45]);
   expect((await get('/api/history?symbol=missing')).status).toBe(404);
  });
