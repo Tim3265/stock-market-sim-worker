@@ -138,7 +138,14 @@ describe('玩家登入和資料隔離',()=>{
   expect(accData.account.cash).toBe(accData.account.initial_cash);
   expect(accData.account.name).toContain('巨鯨');
 
+  await post('/api/orders', { symbol: 'YZU', side: 'BUY', type: 'MARKET', shares: 2 }, cookie);
+  await env.DB.prepare('UPDATE accounts SET initial_cash=initial_cash+500 WHERE id=?').bind(accData.account.id).run();
   const recharge = await post('/api/account/recharge', {}, cookie);
   expect(recharge.status).toBe(200);
+  // 重設後持股清空、本金與現金一致，損益從 0 開始
+  const after = await (await SELF.fetch(base + '/api/account', { headers: { Cookie: cookie } })).json();
+  expect(after.holdings).toEqual([]);
+  expect(after.account.initial_cash).toBe(after.account.cash);
+  expect(after.summary.profit).toBe(0);
  });
 });

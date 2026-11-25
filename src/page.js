@@ -597,7 +597,13 @@ function start(){ if(started)return; started=true;
   $('#cash-coin').innerHTML=pxIcon('COIN',16);
   bindChart();
   $('#btn-logout').onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.reload();};
-  $('#btn-recharge').onclick=async()=>{await api('/api/account/recharge',{method:'POST'});poll();};
+  $('#btn-recharge').onclick=async()=>{
+    if(!confirm('重設資金會直接清空所有持股（不會換成現金）並取消所有委託，現金回到起始金額重新開始。確定要重設嗎？'))return;
+    const msg=$('#order-msg');
+    try{const r=await api('/api/account/recharge',{method:'POST'});msg.className=r.ok?'ok':'err';msg.textContent=r.ok?r.message:(r.message||'重設失敗');}
+    catch(e){msg.className='err';msg.textContent='重設失敗，請稍後再試';}
+    poll();
+  };
   $('#btn-buy').onclick=()=>place('BUY');
   $('#btn-sell').onclick=()=>place('SELL');
   $('#ord-shares').addEventListener('input',updateEst);
