@@ -1,4 +1,3 @@
-import { allowAttempt } from './domain/auth.js';
 import { taipeiDate } from './domain/indexBase.js';
 import { ADMIN_HTML } from './admin-page.js';
 
@@ -8,17 +7,6 @@ const json = (body, status = 200) => Response.json(body, { status, headers });
 // 台北時間今天 00:00 換算成資料庫使用的 UTC 字串
 function todayStartUtc(now = Date.now()) {
   return new Date(Date.parse(taipeiDate(now) + 'T00:00:00+08:00')).toISOString().slice(0, 19).replace('T', ' ');
-}
-
-async function authorize(request, env, local) {
-  if (local) return null;
-  const supplied = (request.headers.get('Authorization') || '').replace(/^Bearer /, '');
-  if (!env.ADMIN_SECRET || !supplied || supplied.length > 512) return json({ ok: false }, 401);
-  const enc = new TextEncoder(), hash = x => crypto.subtle.digest('SHA-256', enc.encode(x));
-  const [a, b] = await Promise.all([hash(supplied), hash(env.ADMIN_SECRET)]);
-  if (crypto.subtle.timingSafeEqual(a, b)) return null;
-  const allowed = await allowAttempt(env.DB, request, 'admin');
-  return json({ ok: false }, allowed ? 401 : 429);
 }
 
 const PLAYERS_SQL = `SELECT a.id, COALESCE(c.username, a.name) AS name, COALESCE(c.is_guest, 0) AS is_guest, c.created_at,
@@ -69,11 +57,8 @@ async function player(env, id) {
 
 export async function adminRoute(request, env, path) {
   const u = new URL(request.url);
-  const local = env.LOCAL_ADMIN === '1' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
-  if (path === '/admin' && request.method === 'GET') return new Response(ADMIN_HTML.replace('data-local-admin="false"', 'data-local-admin="' + local + '"'), { headers: { ...headers, 'content-type': 'text/html; charset=utf-8' } });
+  if (path === '/admin' && request.method === 'GET') return new Response(ADMIN_HTML, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8' } });
   if (!path.startsWith('/api/admin/') || request.method !== 'GET') return null;
-  const denied = await authorize(request, env, local);
-  if (denied) return denied;
   if (path === '/api/admin/overview') return overview(env);
   if (path === '/api/admin/player') return player(env, Number(u.searchParams.get('id')));
   return json({ ok: false }, 404);

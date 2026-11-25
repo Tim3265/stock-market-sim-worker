@@ -3,24 +3,16 @@ import { env } from 'cloudflare:test';
 import worker from '../src/index.js';
 const options=()=>({...env,ADMIN_SECRET:'test-admin-secret-123'});
 beforeEach(async()=>{for(const m of env.ORDERBOOK_MIGRATIONS)await env.DB.batch(m.queries.map(sql=>env.DB.prepare(sql)))});
-it('admin rejects unauthenticated requests and exposes login data only to the configured administrator',async()=>{
- const fetch=(path,init={})=>worker.fetch(new Request('https://example.com'+path,init),options());
- expect((await fetch('/api/admin/overview')).status).toBe(401);
- expect((await fetch('/api/admin/overview',{headers:{Authorization:'Bearer wrong'}})).status).toBe(401);
+it('後台不需要密碼即可查看玩家與登入紀錄',async()=>{
+ const fetch=(path,init={})=>worker.fetch(new Request('https://example.com'+path,init),env);
+ const page=await fetch('/admin');expect(page.status).toBe(200);expect(await page.text()).not.toContain('管理密碼');
  const login=await fetch('/api/auth/guest',{method:'POST',headers:{'content-type':'application/json','CF-Connecting-IP':'203.0.113.8'},body:JSON.stringify({nickname:'Tester'})});expect(login.status).toBe(200);
- const response=await fetch('/api/admin/overview',{headers:{Authorization:'Bearer test-admin-secret-123'}});expect(response.status).toBe(200);const body=await response.json();expect(body.logins).toEqual(expect.arrayContaining([expect.objectContaining({ip_address:'203.0.113.8',method:'guest',success:1})]));
+ const response=await fetch('/api/admin/overview');expect(response.status).toBe(200);const body=await response.json();expect(body.logins).toEqual(expect.arrayContaining([expect.objectContaining({ip_address:'203.0.113.8',method:'guest',success:1})]));
  const tester=body.players.find(p=>p.name==='Tester');expect(tester).toMatchObject({is_guest:1,trade_count:0});expect(tester.last_login_at).toBeTruthy();expect(body.status).toMatchObject({database_ok:true,players:expect.any(Number)});
- const detail=await (await fetch('/api/admin/player?id='+tester.id,{headers:{Authorization:'Bearer test-admin-secret-123'}})).json();
+ const detail=await (await fetch('/api/admin/player?id='+tester.id)).json();
  expect(detail.player.name).toBe('Tester');expect(detail.logins[0]).toMatchObject({ip_address:'203.0.113.8'});expect(Array.isArray(detail.trades)).toBe(true);
- expect((await fetch('/api/admin/player?id='+tester.id)).status).toBe(401);
- expect((await fetch('/api/admin/player?id=999999999',{headers:{Authorization:'Bearer test-admin-secret-123'}})).status).toBe(404);
-});
-it('password-free access is limited to explicitly enabled loopback development',async()=>{
- const options={...env,LOCAL_ADMIN:'1'};
- const local=await worker.fetch(new Request('http://localhost/api/admin/overview'),options);expect(local.status).toBe(200);
- const remote=await worker.fetch(new Request('https://example.com/api/admin/overview'),options);expect(remote.status).toBe(401);
- const disabled=await worker.fetch(new Request('http://localhost/api/admin/overview'),env);expect(disabled.status).toBe(401);
- const page=await worker.fetch(new Request('http://localhost/admin'),options);expect(await page.text()).toContain('data-local-admin="true"');
+ expect((await fetch('/api/admin/player?id=999999999')).status).toBe(404);
+ expect((await fetch('/api/admin/player?id=abc')).status).toBe(400);
 });
 it('大盤指數接續前一天收盤，不會每天重設成 1000',async()=>{
  const get=path=>worker.fetch(new Request('https://example.com'+path),env);
@@ -35,4 +27,19 @@ it('大盤指數接續前一天收盤，不會每天重設成 1000',async()=>{
  expect(state.index_base).toBe(1234.5);
  const latest=await env.DB.prepare('SELECT value FROM index_history ORDER BY id DESC LIMIT 1').first();
  expect(Math.abs(latest.value-1234.5)/1234.5).toBeLessThan(0.1);
+});
+it('持股記錄平均成本與未實現損益，賣出依比例扣掉成本',async()=>{
+ const call=async(path,init={},cookie)=>worker.fetch(new Request('https://example.com'+path,{...init,headers:{'content-type':'application/json',...(cookie?{cookie}:{}),...(init.headers||{})}}),env);
+ const login=await call('/api/auth/guest',{method:'POST',body:JSON.stringify({nickname:'成本'})});
+ const cookie=login.headers.get('set-cookie').split(';')[0];
+ const order=body=>call('/api/orders',{method:'POST',body:JSON.stringify({symbol:'2330',type:'MARKET',...body})},cookie).then(r=>r.json());
+ const buy=await order({side:'BUY',shares:4});expect(buy.status).toBe('FILLED');
+ const row=await env.DB.prepare("SELECT h.shares,h.cost FROM holdings h JOIN player_credentials c ON c.account_id=h.account_id WHERE c.username='成本' AND h.symbol='2330'").first();
+ expect(row.shares).toBe(4);expect(row.cost).toBeCloseTo(buy.amount+buy.fee,2);
+ const sell=await order({side:'SELL',shares:1});expect(sell.status).toBe('FILLED');
+ const after=await env.DB.prepare("SELECT h.shares,h.cost FROM holdings h JOIN player_credentials c ON c.account_id=h.account_id WHERE c.username='成本' AND h.symbol='2330'").first();
+ expect(after.shares).toBe(3);expect(after.cost).toBeCloseTo(row.cost*3/4,1);
+ const acc=await (await call('/api/account',{},cookie)).json();
+ const h=acc.holdings.find(x=>x.symbol==='2330');
+ expect(h.avg_cost).toBeCloseTo(after.cost/3,2);expect(h.unrealized).toBeCloseTo(h.market_value-after.cost,2);
 });

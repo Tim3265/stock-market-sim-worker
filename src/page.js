@@ -254,7 +254,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
       <div class="panel" style="padding:16px">
         <div class="section-title">資產總覽</div>
         <div id="portfolio-summary" style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:14px;"></div>
-        <table id="holdings-table"><thead><tr><th>股票</th><th>持有股數</th><th>市值</th></tr></thead><tbody></tbody></table>
+        <table id="holdings-table"><thead><tr><th>股票</th><th>持有股數</th><th>平均成本</th><th>市值</th><th>未實現損益</th></tr></thead><tbody></tbody></table>
         <details style="margin-top:18px"><summary class="section-title" style="cursor:pointer">交易紀錄（進階） <a id="csv-link" href="/api/trades/export" onclick="event.stopPropagation()" style="color:var(--blue); font-size:11px">下載 CSV</a></summary>
         <table id="trades-table"><thead><tr><th>時間</th><th>股票</th><th>買賣</th><th>股數</th><th>價格</th><th>金額</th></tr></thead><tbody></tbody></table>
         </details>
@@ -740,19 +740,23 @@ function renderPortfolio(){
   $('#portfolio-summary').innerHTML=a?[
     ['可用現金','$'+fmt(a.available_cash!=null?a.available_cash:a.cash)+(fz>0?' <span style="color:var(--dim); font-size:11px">（凍結 $'+fmt(fz)+'）</span>':'')],
     ['持股市值','$'+fmt(mv)],
-    ['總資產','$'+fmt((a.cash||0)+mv)]
+    ['總資產','$'+fmt((a.cash||0)+mv)],
+    ['總損益',pnlText((a.cash||0)+mv-Number(a.initial_cash||0),Number(a.initial_cash||0))]
   ].map(p=>'<div><div style="color:var(--dim); font-size:11px">'+p[0]+'</div><div style="color:var(--green); font-size:16px">'+p[1]+'</div></div>').join(''):'請先登入';
   const hb=$('#holdings-table tbody');
-  hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+esc(h.symbol)+' '+esc(h.nickname||h.name)+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>$'+fmt(h.market_value)+'</td></tr>').join('')||'<tr><td colspan="3" style="color:var(--dim)">無持股</td></tr>';
+  hb.innerHTML=(state.holdings||[]).map(h=>'<tr><td>'+esc(h.symbol)+' '+esc(h.nickname||h.name)+'</td><td>'+h.shares+(h.frozen_shares>0?' <span style="color:var(--dim); font-size:11px">（凍 '+h.frozen_shares+'）</span>':'')+'</td><td>'+(h.avg_cost!=null?'$'+fmt(h.avg_cost):'—')+'</td><td>$'+fmt(h.market_value)+'</td><td>'+(h.unrealized!=null?pnlText(h.unrealized,h.cost):'—')+'</td></tr>').join('')||'<tr><td colspan="5" style="color:var(--dim)">無持股</td></tr>';
   const tb=$('#trades-table tbody');
   tb.innerHTML=(state.trades||[]).map(t=>'<tr><td>'+fmtTime(t.created_at)+'</td><td>'+esc(t.symbol)+'</td><td class="'+(t.side==='BUY'?'up':'down')+'">'+(t.side==='BUY'?'買':'賣')+'</td><td>'+t.shares+'</td><td>$'+fmt(t.price)+'</td><td>$'+fmt(t.amount)+'</td></tr>').join('')||'<tr><td colspan="6" style="color:var(--dim)">無交易紀錄</td></tr>';
 }
 
+// 損益：台股習慣紅漲綠跌
+function pnlText(v,base){v=Math.round(Number(v||0)*100)/100;const pct=base>0?v/base*100:0;const cls=Math.abs(v)<0.005?'':(v>0?'up':'down');return '<span class="'+cls+'">'+(v>0?'+':v<0?'-':'')+'$'+fmt(Math.abs(v))+(base>0?' ('+(pct>0?'+':pct<0?'-':'')+Math.abs(pct).toFixed(2)+'%)':'')+'</span>';}
+const ORDER_TYPE={LIMIT:'限價',MARKET:'市價'},ORDER_STATUS={OPEN:'等待成交',PARTIAL:'部分成交',FILLED:'已成交',CANCELLED:'已取消'};
 function renderOrders(){
   const ob=$('#orders-table tbody');
   const open=(state.orders||[]).filter(o=>o.status==='OPEN'||o.status==='PARTIAL');
-  ob.innerHTML=open.map(o=>'<tr><td>'+esc(o.symbol)+'</td><td class="'+(o.side==='BUY'?'up':'down')+'">'+(o.side==='BUY'?'買':'賣')+'</td><td>'+esc(o.type)+'</td><td>'+(o.price?('$'+fmt(o.price)):'市價')+'</td><td>'+o.shares+'</td><td>'+o.filled_shares+'</td><td>'+esc(o.status)+'</td><td class="row-actions"><button class="ghost" data-cancel="'+o.id+'">取消</button></td></tr>').join('')||'<tr><td colspan="8" style="color:var(--dim)">無進行中委託</td></tr>';
-  ob.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{await api('/api/orders/'+b.dataset.cancel,{method:'DELETE'});poll();});
+  ob.innerHTML=open.map(o=>'<tr><td>'+esc(o.symbol)+'</td><td class="'+(o.side==='BUY'?'up':'down')+'">'+(o.side==='BUY'?'買':'賣')+'</td><td>'+esc(ORDER_TYPE[o.type]||o.type)+'</td><td>'+(o.price?('$'+fmt(o.price)):'市價')+'</td><td>'+o.shares+'</td><td>'+o.filled_shares+'</td><td>'+esc(ORDER_STATUS[o.status]||o.status)+'</td><td class="row-actions"><button class="ghost" data-cancel="'+o.id+'">取消</button></td></tr>').join('')||'<tr><td colspan="8" style="color:var(--dim)">無進行中委託</td></tr>';
+  ob.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{const msg=$('#order-msg');try{const r=await api('/api/orders/'+b.dataset.cancel,{method:'DELETE'});msg.className=r&&r.ok===false?'err':'ok';msg.textContent=r&&r.ok===false?(r.message||'取消失敗'):'委託已取消';}catch(e){msg.className='err';msg.textContent=e.message||'取消失敗';}poll();});
 }
 
 function renderFills(){
