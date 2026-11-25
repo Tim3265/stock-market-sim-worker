@@ -88,6 +88,8 @@ describe('Sprint 2: 市價單及造市商',()=>{
   const buy=await order({account_id:1,symbol:'YZU',side:'BUY',type:'LIMIT',price:44,shares:10,request_id:'requote-player-0001'});
   expect(buy.body.status).toBe('OPEN');
   await env.DB.prepare("UPDATE orders SET price=43 WHERE id=(SELECT id FROM orders WHERE account_id=1000000 AND symbol='YZU' AND side='SELL' AND status='OPEN' ORDER BY id LIMIT 1)").run();
+  // 穿價只會在市場推進後出現：讓下一個請求推進一輪（tick_count=1 不是重新報價輪，不會改掉上面設定的價格）。
+  await env.DB.prepare('UPDATE market_state SET tick_count=1,last_tick_at=0 WHERE id=1').run();
   const result=await get('/api/orders?id=1');
   expect(result.body.orders[0]).toMatchObject({status:'FILLED',filled_shares:10});
   expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=1').first()).toEqual({cash:99569.82,frozen_cash:0});
@@ -365,6 +367,8 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect(await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=15').first()).toEqual({cash:121.55,frozen_cash:121.55});
   // 造市商賣單改價到 40.50，下一個請求觸發 matchCrossed 穿價撮合
   await env.DB.prepare("UPDATE orders SET price=40.50, shares=1, filled_shares=0 WHERE id=(SELECT id FROM orders WHERE account_id=1000000 AND symbol='YZU' AND side='SELL' AND status='OPEN' ORDER BY id LIMIT 1)").run();
+  // 穿價只會在市場推進後出現：讓下一個請求推進一輪（tick_count=1 不是重新報價輪，不會改掉上面設定的價格）。
+  await env.DB.prepare('UPDATE market_state SET tick_count=1,last_tick_at=0 WHERE id=1').run();
   const r=await get('/api/stocks');
   expect(r.status).toBe(200);
   const st=await env.DB.prepare('SELECT cash,frozen_cash FROM accounts WHERE id=15').first();

@@ -16,20 +16,25 @@ import * as auth from './domain/auth.js';
 import { runBotActivity } from './domain/botActivity.js';
 import { noteRequest, tickIntervalMs, pollMs } from './domain/activity.js';
 import { getActiveEvents } from './domain/events.js';
+import { meter, flushUsage, noteUsageRequest } from './usage.js';
 
 const DEFAULT_TRADE_LIMIT = 20;
 const upgradedCache = new WeakMap();
 async function isUpgraded(db) {
   if (upgradedCache.has(db)) return upgradedCache.get(db);
-  const row = await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='market_state'").first();
-  upgradedCache.set(db, !!row);
-  return !!row;
+  // 直接查 market_state（讀 1 列）；查 sqlite_master 每次要掃過整張系統表（約 40 列）。
+  let upgraded = true;
+  try { await db.prepare('SELECT 1 FROM market_state LIMIT 1').first(); }
+  catch (err) { if (!String(err).includes('market_state')) throw err; upgraded = false; }
+  upgradedCache.set(db, upgraded);
+  return upgraded;
 }
 const MAX_TRADE_LIMIT = 100;
 
-// 看盤資料（股價、委託簿、指數、走勢）人人相同：同一個 Worker 執行個體內快取 2 秒，
-// 40 人同時輪詢時只有少數請求真的去查資料庫，避免 D1「10 秒內用量過多」被擋。
-// 個人資料（現金、持股、委託）不快取；本執行個體有寫入（下單、撤單、推進市場）就清空。
+// 看盤資料（股價、委託簿、指數、走勢）人人相同：同一個 Worker 執行個體內快取，
+// 40 人同時輪詢時只有少數請求真的去查資料庫，省下 D1 讀取額度，也避免「10 秒內用量過多」被擋。
+// 股價、委託簿快取 2 秒；走勢圖、排行榜這類變化慢的資料快取 10 秒（倍數 5）。
+// 個人資料（現金、持股、委託）不快取。下單不清快取（否則人多時快取幾乎永遠是空的），只有市場推進時清空。
 const liveCache = new Map();
 
 // 同一個 Worker 執行個體內，下單／撤單／重設資金一次只處理一筆（排隊）。
@@ -42,8 +47,8 @@ function serialized(fn) {
   return run;
 }
 function liveCacheTtl(env) { const n = Number(env.LIVE_CACHE_MS ?? 2000); return Number.isFinite(n) && n > 0 ? n : 0; }
-async function cachedLive(env, key, load) {
-  const ttl = liveCacheTtl(env);
+async function cachedLive(env, key, load, factor = 1) {
+  const ttl = liveCacheTtl(env) * factor;
   if (!ttl) return load();
   const hit = liveCache.get(key), now = Date.now();
   if (hit && now - hit.at < ttl) return hit.value;
@@ -54,26 +59,35 @@ async function cachedLive(env, key, load) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    // 所有資料庫查詢都經過用量計（見 usage.js），後台才看得到今天用了多少免費額度。
+    const rawDb = env.DB;
+    env = { ...env, DB: meter(rawDb) };
+    noteUsageRequest();
     try {
-      return await route(request, env);
+      return await route(request, env, rawDb);
     } catch (err) {
       // 不要把 stack 丟給使用者；log 留給 wrangler tail。
       console.error("unhandled error", err);
+      if (String(err).includes('exceeded D1')) return fail("INTERNAL", "今天的資料庫免費額度已用完，台灣時間早上 8 點會恢復");
       return fail("INTERNAL", "伺服器錯誤，請稍後再試");
+    } finally {
+      const flushing = flushUsage(rawDb);
+      if (ctx && ctx.waitUntil) ctx.waitUntil(flushing); else await flushing;
     }
   },
 };
 
-async function route(request, env) {
+async function route(request, env, rawDb) {
   const url = new URL(request.url);
   const path = url.pathname;
   const adminResponse = await adminRoute(request, env, path);
   if (adminResponse) return adminResponse;
-  const upgraded = path.startsWith('/api/') && await isUpgraded(env.DB);
+  const upgraded = path.startsWith('/api/') && await isUpgraded(rawDb);
   noteRequest();
-  if (!['GET', 'HEAD'].includes(request.method)) liveCache.clear();
-  if (upgraded) { const ticked = await maybeTick(env.DB, Date.now(), tickIntervalMs()); if (ticked) liveCache.clear(); await matchCrossed(env.DB); if (ticked) await runBotActivity(env.DB); }
+  // 只有市場推進（造市商重新報價、換日改漲跌停）才可能讓兩張委託「穿價」，所以只在推進後檢查撮合；
+  // 下限價單時已經當場撮合過了。以前每個請求都檢查，一次要讀上百列。
+  if (upgraded) { const ticked = await maybeTick(env.DB, Date.now(), tickIntervalMs()); if (ticked) { liveCache.clear(); await matchCrossed(env.DB); await runBotActivity(env.DB); } }
   if (path.startsWith('/api/') && !['GET','HEAD'].includes(request.method)) {
     const origin=request.headers.get('Origin');
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
@@ -153,9 +167,9 @@ async function route(request, env) {
         account.available_cash = account.availableCash;
       }
     }
-    const { bookResult, fills, state, indexInfo, indexHistory, histories } = await cachedLive(env, 'market|' + symbol + '|' + (light ? 1 : 0), async () => {
-      const bookResult = await book(env.DB, symbol);
-      const fills = upgraded && !light ? (await env.DB.prepare(`
+    // 只快取六檔股票的委託簿，亂打的代號不佔快取。
+    const bookResult = /^(2330|2317|2454|3711|YZU|YOUJIAN)$/.test(symbol) ? await cachedLive(env, 'book|' + symbol, () => book(env.DB, symbol)) : await book(env.DB, symbol);
+    const fills = light || !upgraded ? [] : await cachedLive(env, 'fills', async () => (await env.DB.prepare(`
         SELECT f.id, f.symbol, s.name as stock_name, s.nickname, f.shares, f.price, f.amount, f.created_at,
                b.name as buyer_name, b.is_bot as buyer_is_bot,
                se.name as seller_name, se.is_bot as seller_is_bot
@@ -164,16 +178,19 @@ async function route(request, env) {
         JOIN accounts b ON b.id = f.buyer_id
         JOIN accounts se ON se.id = f.seller_id
         ORDER BY f.id DESC LIMIT 30
-      `).all()).results : [];
+      `).all()).results);
+    const { state, indexInfo } = await cachedLive(env, 'index', async () => ({
+      state: upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null,
+      indexInfo: upgraded ? await computeIndex(env.DB) : null,
+    }));
+    // 迷你走勢與大盤走勢只在成交、推進時變動，快取 10 秒。
+    const { indexHistory, histories } = await cachedLive(env, 'charts', async () => {
+      if (!upgraded) return { indexHistory: [], histories: {} };
       const stockSymbols = ['2330','2317','2454','3711','YZU','YOUJIAN'];
-      const queriesList = upgraded ? stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 24").bind(sym)) : [];
-      const histRows = queriesList.length ? await env.DB.batch(queriesList) : [];
-      const state = upgraded ? await env.DB.prepare('SELECT tick_count FROM market_state WHERE id=1').first() : null;
-      const indexInfo = upgraded ? await computeIndex(env.DB) : null;
-      const indexHistory = upgraded ? (await env.DB.prepare("SELECT value AS price, created_at FROM index_history ORDER BY id DESC LIMIT 60").all()).results.reverse() : [];
-      const histories = upgraded ? Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()])) : {};
-      return { bookResult, fills, state, indexInfo, indexHistory, histories };
-    });
+      const histRows = await env.DB.batch(stockSymbols.map(sym => env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 24").bind(sym)));
+      const indexHistory = (await env.DB.prepare("SELECT value AS price, created_at FROM index_history ORDER BY id DESC LIMIT 60").all()).results.reverse();
+      return { indexHistory, histories: Object.fromEntries(stockSymbols.map((sym, i) => [sym, histRows[i].results.reverse()])) };
+    }, 5);
     const index = indexInfo ? indexInfo.value : null;
     const events = getActiveEvents(state?.tick_count || 0);
     return ok({
@@ -268,11 +285,13 @@ async function route(request, env) {
     return ok({ histories: Object.fromEntries(stocks.map((stock,i)=>[stock.symbol,rows[i].results.reverse()])) });
   }
   if(path==='/api/bots' && request.method==='GET'){
-    const bots=(await env.DB.prepare("SELECT id,name,bot_kind,ROUND(cash,2) cash FROM accounts WHERE is_bot=1 ORDER BY id").all()).results;
-    const holdings=(await env.DB.prepare(`SELECT h.account_id,a.name bot_name,h.symbol,s.nickname,h.shares,h.frozen_shares
-      FROM holdings h JOIN accounts a ON a.id=h.account_id JOIN stocks s ON s.symbol=h.symbol
-      WHERE a.is_bot=1 AND h.shares>0 ORDER BY h.account_id,h.symbol`).all()).results;
-    return ok({bots,holdings});
+    return ok(await cachedLive(env, 'bots', async () => {
+      const bots=(await env.DB.prepare("SELECT id,name,bot_kind,ROUND(cash,2) cash FROM accounts WHERE is_bot=1 ORDER BY id").all()).results;
+      // 機器人只有 4 個：逐一用 (account_id, symbol) 主鍵查，不必掃過所有玩家的持股。
+      const holdings=!bots.length?[]:(await env.DB.batch(bots.map(b=>env.DB.prepare(`SELECT h.account_id,? bot_name,h.symbol,s.nickname,h.shares,h.frozen_shares
+        FROM holdings h JOIN stocks s ON s.symbol=h.symbol WHERE h.account_id=? AND h.shares>0 ORDER BY h.symbol`).bind(b.name,b.id)))).flatMap(r=>r.results);
+      return {bots,holdings};
+    }, 5));
   }
   if(path==='/api/volume' && request.method==='GET'){
     const symbol=url.searchParams.get('symbol')||'';
@@ -291,22 +310,28 @@ async function route(request, env) {
     return new Response(csv,{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="trades.csv"'}});
   }
   if(path==='/api/leaderboard' && request.method==='GET'){
-    const rows=await env.DB.prepare(`SELECT COALESCE(c.username,a.name) username,a.is_bot,ROUND(a.cash+COALESCE(SUM(h.shares*s.price),0),2) total_assets
+    // 排行榜只列真人玩家：排除機器人，以及後台設定為「從排行榜隱藏」的帳號。快取 10 秒。
+    const players=await cachedLive(env, 'leaderboard', async () => (await env.DB.prepare(`SELECT COALESCE(c.username,a.name) username,ROUND(a.cash+COALESCE(SUM(h.shares*s.price),0),2) total_assets
       FROM accounts a LEFT JOIN player_credentials c ON c.account_id=a.id
       LEFT JOIN holdings h ON h.account_id=a.id LEFT JOIN stocks s ON s.symbol=h.symbol
-      WHERE a.is_bot=0 GROUP BY a.id ORDER BY total_assets DESC,username LIMIT 100`).all();
-    return ok({players:rows.results});
+      WHERE a.is_bot=0 AND a.hidden=0 GROUP BY a.id ORDER BY total_assets DESC,username LIMIT 100`).all()).results, 5);
+    return ok({players});
   }
 
   if (path === '/api/history' && request.method === 'GET') {
     const symbol = url.searchParams.get('symbol') || '';
-    const stock = await env.DB.prepare('SELECT symbol, price FROM stocks WHERE symbol=?').bind(symbol).first();
-    if (!stock) return fail('NOT_FOUND', '沒有這檔股票');
-    const rows = await env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 500").bind(symbol).all();
-    const fills = await env.DB.prepare(`SELECT f.id,f.shares,f.price,f.amount,f.created_at,b.name buyer_name,se.name seller_name
-      FROM order_fills f JOIN accounts b ON b.id=f.buyer_id JOIN accounts se ON se.id=f.seller_id
-      WHERE f.symbol=? ORDER BY f.id DESC LIMIT 20`).bind(symbol).all();
-    return ok({ stock, history: rows.results.reverse(), fills: fills.results });
+    if (!/^[A-Z0-9]{1,10}$/.test(symbol)) return fail('NOT_FOUND', '沒有這檔股票');
+    const result = await cachedLive(env, 'history|' + symbol, async () => {
+      const stock = await env.DB.prepare('SELECT symbol, price FROM stocks WHERE symbol=?').bind(symbol).first();
+      if (!stock) return null;
+      const rows = await env.DB.prepare("SELECT price, created_at FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 500").bind(symbol).all();
+      const fills = await env.DB.prepare(`SELECT f.id,f.shares,f.price,f.amount,f.created_at,b.name buyer_name,se.name seller_name
+        FROM order_fills f JOIN accounts b ON b.id=f.buyer_id JOIN accounts se ON se.id=f.seller_id
+        WHERE f.symbol=? ORDER BY f.id DESC LIMIT 20`).bind(symbol).all();
+      return { stock, history: rows.results.reverse(), fills: fills.results };
+    }, 5);
+    if (!result) return fail('NOT_FOUND', '沒有這檔股票');
+    return ok(result);
   }
 
   if (path === '/api/orderbook' && request.method === 'GET') {

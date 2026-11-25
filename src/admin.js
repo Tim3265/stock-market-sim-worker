@@ -1,5 +1,6 @@
 import { taipeiDate } from './domain/indexBase.js';
 import { ADMIN_HTML } from './admin-page.js';
+import { usageReport, officialUsage } from './usage.js';
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" };
 const json = (body, status = 200) => Response.json(body, { status, headers });
@@ -9,7 +10,7 @@ function todayStartUtc(now = Date.now()) {
   return new Date(Date.parse(taipeiDate(now) + 'T00:00:00+08:00')).toISOString().slice(0, 19).replace('T', ' ');
 }
 
-const PLAYERS_SQL = `SELECT a.id, COALESCE(c.username, a.name) AS name, COALESCE(c.is_guest, 0) AS is_guest, c.created_at,
+const PLAYERS_SQL = `SELECT a.id, COALESCE(c.username, a.name) AS name, COALESCE(c.is_guest, 0) AS is_guest, c.created_at, a.hidden,
   a.cash, a.initial_cash,
   COALESCE((SELECT SUM(h.shares * s.price) FROM holdings h JOIN stocks s ON s.symbol = h.symbol WHERE h.account_id = a.id), 0) AS stock_value,
   (SELECT COUNT(*) FROM trades t WHERE t.account_id = a.id) AS trade_count,
@@ -32,9 +33,8 @@ async function overview(env) {
       (SELECT COUNT(DISTINCT account_id) FROM login_events WHERE created_at >= ?1 AND success = 1) AS active_today,
       (SELECT COUNT(*) FROM login_events WHERE created_at >= datetime('now','-1 day') AND success = 0) AS failed_logins_24h,
       (SELECT COUNT(*) FROM orders o JOIN accounts a ON a.id = o.account_id WHERE a.is_bot = 0 AND o.status IN ('OPEN','PARTIAL')) AS open_player_orders,
-      (SELECT COUNT(*) FROM price_history) AS price_points,
-      (SELECT MIN(created_at) FROM price_history) AS history_since,
-      (SELECT COUNT(*) FROM trades) AS player_trades`).bind(today),
+      (SELECT COALESCE(MAX(id), 0) FROM price_history) AS price_points,
+      (SELECT created_at FROM price_history ORDER BY id LIMIT 1) AS history_since`).bind(today),
     env.DB.prepare(PLAYERS_SQL),
     env.DB.prepare('SELECT account_id, username, method, success, ip_address, created_at FROM login_events ORDER BY id DESC LIMIT 100'),
   ]);
@@ -55,11 +55,33 @@ async function player(env, id) {
   return json({ ok: true, player: info.results[0], holdings: holdings.results, trades: trades.results, orders: orders.results, logins: logins.results });
 }
 
+// D1 免費額度用量：本站自己記錄的數字；有設定 Cloudflare API token 時另附官方統計。
+async function usage(env) {
+  let report;
+  try { report = await usageReport(env.DB); }
+  catch (err) { if (!String(err).includes('usage_minutes')) throw err; return json({ ok: false, message: '尚未套用 0017 資料庫遷移，還沒有用量紀錄' }, 503); }
+  return json({ ok: true, ...report, official: await officialUsage(env) });
+}
+
+// 從排行榜隱藏／恢復（測試帳號、不當暱稱）。不刪除任何交易紀錄。
+async function setHidden(request, env) {
+  const origin = request.headers.get('Origin');
+  if (origin && origin !== new URL(request.url).origin) return json({ ok: false, message: '請從本站操作' }, 403);
+  const input = await request.json().catch(() => ({}));
+  const id = Number(input.id);
+  if (!Number.isInteger(id) || id <= 0 || typeof input.hidden !== 'boolean') return json({ ok: false, message: '資料不正確' }, 400);
+  const result = await env.DB.prepare('UPDATE accounts SET hidden=? WHERE id=? AND is_bot=0').bind(input.hidden ? 1 : 0, id).run();
+  if (!result.meta.changes) return json({ ok: false, message: '找不到這位玩家' }, 404);
+  return json({ ok: true, id, hidden: input.hidden });
+}
+
 export async function adminRoute(request, env, path) {
   const u = new URL(request.url);
   if (path === '/admin' && request.method === 'GET') return new Response(ADMIN_HTML, { headers: { ...headers, 'content-type': 'text/html; charset=utf-8' } });
+  if (path === '/api/admin/player/hidden' && request.method === 'POST') return setHidden(request, env);
   if (!path.startsWith('/api/admin/') || request.method !== 'GET') return null;
   if (path === '/api/admin/overview') return overview(env);
+  if (path === '/api/admin/usage') return usage(env);
   if (path === '/api/admin/player') return player(env, Number(u.searchParams.get('id')));
   return json({ ok: false }, 404);
 }
