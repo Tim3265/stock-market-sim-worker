@@ -149,3 +149,12 @@ describe('玩家登入和資料隔離',()=>{
   expect(after.summary.profit).toBe(0);
  });
 });
+it('名字登入有自己的較寬上限：同一個 IP 30 人同時進場不會被擋，也不影響密碼登入的上限', async () => {
+  const headers = { 'Content-Type': 'application/json', 'CF-Connecting-IP': '198.51.100.7' };
+  for (let i = 0; i < 30; i++) {
+    const r = await SELF.fetch(base + '/api/auth/guest', { method: 'POST', headers, body: JSON.stringify({ nickname: '同學' + i }) });
+    expect(r.status).toBe(200);
+  }
+  const pw = await SELF.fetch(base + '/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ username: 'nobody', password: 'wrong-pass' }) });
+  expect(pw.status).toBe(401);
+});

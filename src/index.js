@@ -52,7 +52,7 @@ async function route(request, env) {
     if(origin && origin!==url.origin)return Response.json({ok:false,code:'FORBIDDEN',message:'請從本站操作'}, {status:403});
   }
   if (path === '/api/auth/guest' && request.method === 'POST') {
-    if(!await auth.allowAttempt(env.DB,request))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
+    if(!await auth.allowAttempt(env.DB,request,'guest',120))return fail('RATE_LIMITED','操作太頻繁，請五分鐘後再試');
     const input = await request.json().catch(() => ({}));
     const result = await auth.guestLogin(env.DB, input.nickname);
     await recordLogin(env.DB,request,result,'guest',input.nickname);

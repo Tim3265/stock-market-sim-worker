@@ -40,7 +40,7 @@ function ret(p){var init=Number(p.initial_cash||0);return init>0?(total(p)-init)
 function pctText(v){var t=Math.abs(v).toFixed(2);return (Number(t)===0?'':v>0?'+':'-')+t+'%'}
 function trendClass(v){return Math.abs(v)<0.005?null:v>0?'up':'down'}
 function methodName(m){return m==='guest'?'名字登入':m==='password'?'密碼登入':m}
-async function api(path){var r=await fetch(path,{cache:'no-store'});if(!r.ok)throw Error('載入失敗（'+r.status+'）');return r.json()}
+async function api(path){var r=await fetch(path,{cache:'no-store'});var d=await r.json().catch(function(){return null});if(!r.ok)throw Error((d&&d.message)||'載入失敗（'+r.status+'）');return d}
 
 function renderStatus(s){
  var box=panel('系統狀態','開啟後台的時間：'+new Date().toLocaleTimeString('zh-TW',{hour12:false})),g=el('div','tiles');box.append(g);
