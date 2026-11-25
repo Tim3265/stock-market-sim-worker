@@ -1,0 +1,15 @@
+SELECT
+ (SELECT COUNT(*) FROM accounts) AS accounts,
+ (SELECT ROUND(SUM(cash) + (SELECT amount FROM fee_revenue WHERE id=1) - SUM(initial_cash), 2) FROM accounts) AS money_invariant,
+ (SELECT ROUND(SUM(cash),2) FROM accounts) AS total_cash,
+ (SELECT amount FROM fee_revenue WHERE id=1) AS fees,
+ (SELECT group_concat(symbol || ':' || total, ' ') FROM (SELECT symbol, SUM(shares) AS total FROM holdings GROUP BY symbol ORDER BY symbol)) AS shares_by_symbol,
+ (SELECT COUNT(*) FROM accounts WHERE cash < 0 OR frozen_cash < 0 OR frozen_cash > cash + 0.001) AS bad_cash,
+ (SELECT COUNT(*) FROM holdings WHERE shares < 0 OR frozen_shares < 0 OR frozen_shares > shares OR cost < 0) AS bad_holdings,
+ (SELECT COUNT(*) FROM orders WHERE filled_shares > shares OR (status='FILLED' AND filled_shares <> shares)) AS bad_orders,
+ (SELECT COUNT(*) FROM (SELECT a.frozen_cash AS f, COALESCE((SELECT SUM(o.price*(o.shares-o.filled_shares)) FROM orders o WHERE o.account_id=a.id AND o.side='BUY' AND o.status IN ('OPEN','PARTIAL')),0) AS r, (SELECT COUNT(*) FROM orders o WHERE o.account_id=a.id AND o.side='BUY' AND o.status IN ('OPEN','PARTIAL')) AS n FROM accounts a WHERE a.is_bot=0) WHERE f < r - 0.01 OR f > r*1.0005 + 0.02*n + 0.001) AS frozen_mismatch,
+ (SELECT COUNT(*) FROM holdings h JOIN accounts a ON a.id=h.account_id WHERE a.is_bot=0 AND h.frozen_shares <> COALESCE((SELECT SUM(o.shares-o.filled_shares) FROM orders o WHERE o.account_id=h.account_id AND o.symbol=h.symbol AND o.side='SELL' AND o.status IN ('OPEN','PARTIAL')),0)) AS frozen_shares_mismatch,
+ (SELECT COUNT(*) FROM trades) AS trades,
+ (SELECT COUNT(*) FROM order_fills) AS fills,
+ (SELECT COUNT(*) FROM login_events) AS logins,
+ (SELECT tick_count FROM market_state WHERE id=1) AS ticks;

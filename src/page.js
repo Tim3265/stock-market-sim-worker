@@ -731,7 +731,17 @@ async function place(side){
   if(!Number.isInteger(shares)||shares<1){msg.className='err';msg.textContent='請輸入股數';return;}
   const body={symbol:selected,side,shares,request_id:'web-'+Date.now()+'-'+Math.random().toString(16).slice(2,10)};
   if(price){body.type='LIMIT';body.price=price;}
-  const r=await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  // 人多時伺服器可能回「市場正在更新」：用同一個 request_id 自動重送（不會重複下單）。
+  const btns=[...document.querySelectorAll('#btn-buy,#btn-sell')];btns.forEach(b=>b.disabled=true);
+  let r;
+  try{
+    for(let attempt=0;attempt<8;attempt++){
+      if(attempt){msg.className='';msg.textContent='下單的人很多，自動排隊重試中…';await new Promise(res=>setTimeout(res,200+Math.random()*300*Math.min(attempt,4)));}
+      try{r=await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}
+      catch(e){r={ok:false,code:'NETWORK',message:'連線不穩，請再試一次'};}
+      if(r.ok||!['CONFLICT','NETWORK','INTERNAL'].includes(r.code))break;
+    }
+  }finally{btns.forEach(b=>b.disabled=false);}
   if(r.ok){
     msg.className='ok';
     msg.textContent=r.status==='OPEN'?('委託已掛單，股數 '+r.remaining+' 股'):(r.status==='PARTIAL'?('部分成交 '+r.filledShares+' 股，剩餘 '+r.remaining+' 股繼續掛單'):(r.status==='CANCELLED'?('無對手盤，委託已取消（'+(r.cancelReason||'IOC_NO_LIQUIDITY')+'），成交 '+r.filledShares+' 股'):('成交 '+r.filledShares+' 股 @ $'+fmt(r.avgPrice)+'，手續費 $'+fmt(r.fee))));

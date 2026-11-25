@@ -7,6 +7,11 @@ const money=x=>x/100;
 const feeCents=(priceCents,shares)=>Math.ceil(priceCents*shares*399/1000000);
 const err=(code,message)=>({ok:false,code,message});
 const prepare=(db,sql,...values)=>db.prepare(sql).bind(...values);
+// 多人同時下單時，市場版本號（match_seq）衝突就重試，重試前隨機等一下讓請求錯開。
+// 伺服器端只重試幾次：每次重試都要重算撮合，免費方案每個請求只有 10ms CPU，
+// 重試太多會超時。仍然衝突就回 CONFLICT，由網頁換一個新請求自動再送（見 page.js place）。
+export const MAX_ATTEMPTS=4;
+export async function backoff(attempt){if(attempt>0)await new Promise(r=>setTimeout(r,Math.random()*Math.min(80,15*2**attempt)));}
 export async function book(db,symbol,depth=10){
  const stock=await prepare(db,'SELECT symbol,price,ref_price FROM stocks WHERE symbol=?',symbol).first();
  if(!stock)return err('NOT_FOUND','沒有這檔股票');
@@ -25,7 +30,8 @@ export async function listOrders(db,accountId,status){
 }
 export async function cancelOrder(db,accountId,orderId){
  if(!Number.isSafeInteger(accountId)||accountId<1||!Number.isSafeInteger(orderId)||orderId<1)return err('INVALID_INPUT','委託資料錯誤');
- for(let attempt=0;attempt<4;attempt++){
+ for(let attempt=0;attempt<MAX_ATTEMPTS;attempt++){
+  await backoff(attempt);
   const version=await db.prepare('SELECT match_seq FROM market_state WHERE id=1').first();
   const order=await prepare(db,'SELECT * FROM orders WHERE id=?',orderId).first();
   if(!order)return err('ORDER_NOT_FOUND','找不到委託');
@@ -43,6 +49,12 @@ export async function cancelOrder(db,accountId,orderId){
 // New quotes can cross an existing player limit order. Settle each crossed pair
 // under the same revision guard as normal orders, preserving both reservations.
 export async function matchCrossed(db){
+ // 先用索引做便宜的檢查：沒有任何股票「最高買價 ≥ 最低賣價」就不可能穿價，直接結束，
+ // 不必每個請求都跑下面那個要掃上千列的配對查詢。
+ const maybe=await db.prepare(`SELECT 1 FROM stocks st WHERE
+   (SELECT MAX(price) FROM orders WHERE symbol=st.symbol AND side='BUY' AND type='LIMIT' AND status IN ('OPEN','PARTIAL'))
+   >= (SELECT MIN(price) FROM orders WHERE symbol=st.symbol AND side='SELL' AND type='LIMIT' AND status IN ('OPEN','PARTIAL')) LIMIT 1`).first();
+ if(!maybe)return;
  for(let count=0;count<10;count++){
   const version=await db.prepare('SELECT match_seq FROM market_state WHERE id=1').first();
   const pair=await db.prepare(`SELECT b.id bid_id,b.account_id buyer,b.price bid,b.fee_scheme bid_fee,b.shares-b.filled_shares bid_qty,
@@ -89,7 +101,8 @@ export async function placeMarketOrder(db,input){
   if(cents(limit)<Math.ceil(cents(stock.ref_price)*0.9)||cents(limit)>Math.floor(cents(stock.ref_price)*1.1))return err('PRICE_LIMIT','限價超出漲跌停範圍');
  }
  if(!['MARKET','LIMIT'].includes(type))return err('INVALID_INPUT','委託類型錯誤');
- for(let attempt=0;attempt<4;attempt++){
+ for(let attempt=0;attempt<MAX_ATTEMPTS;attempt++){
+  await backoff(attempt);
   const prior=await prepare(db,'SELECT * FROM orders WHERE request_id=?',requestId).first();
   if(prior){if(prior.account_id!==accountId||prior.symbol!==symbol||prior.side!==side||prior.shares!==shares||prior.type!==type||(type==='LIMIT'&&cents(prior.price)!==cents(limit)))return err('CONFLICT','重複識別碼的交易資料不一致');return readResult(db,prior);}
   const version=await db.prepare('SELECT match_seq FROM market_state WHERE id=1').first();

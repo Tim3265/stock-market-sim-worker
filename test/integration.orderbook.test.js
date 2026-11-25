@@ -372,6 +372,18 @@ describe('Sprint 2: 市價單及造市商',()=>{
   expect(st.frozen_cash).toBeCloseTo(81.04,2);
   expect(st.cash).toBeCloseTo(81.04,2);
  });
+ it('多人同一秒下市價單：同一個執行個體內排隊處理，全部成交、帳目一致',async()=>{
+  await get('/api/orderbook?symbol=2330');
+  const ids=[...Array(20)].map((_,i)=>200+i);
+  for(const id of ids)await env.DB.prepare('INSERT INTO accounts(id,name,initial_cash,cash) VALUES(?,?,100000,100000)').bind(id,'搶'+id).run();
+  const before=await env.DB.prepare("SELECT SUM(shares) AS n FROM holdings WHERE symbol='2330'").first();
+  const results=await Promise.all(ids.map(id=>order({account_id:id,symbol:'2330',side:'BUY',type:'MARKET',shares:1,request_id:'rush-2330-'+id+'-000001'})));
+  expect(results.map(r=>r.body.status)).toEqual(ids.map(()=>'FILLED'));
+  const after=await env.DB.prepare("SELECT SUM(shares) AS n FROM holdings WHERE symbol='2330'").first();
+  expect(after.n).toBe(before.n);
+  const held=await env.DB.prepare("SELECT COUNT(*) AS n FROM holdings WHERE symbol='2330' AND shares=1 AND account_id BETWEEN 200 AND 219").first();
+  expect(held.n).toBe(20);
+ });
 });
 
 describe("黑天鵝與市場快訊 API", () => {
