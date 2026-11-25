@@ -1,5 +1,7 @@
 // Quotes are real funded orders. Requote and tick claim commit in one D1 batch.
 
+import { indexBaseFor } from './indexBase.js';
+
 const BOT = 1000000;
 
 // 有人瀏覽時市場才推進；沒人請求就完全靜止，不燒 D1 寫入額度。
@@ -101,7 +103,10 @@ export async function maybeTick(db, now = Date.now(), intervalMs = TICK_INTERVAL
     base+=w*(refBySymbol.get(stock.symbol)??Number(stock.price));
     cur+=w*Number(stock.price);
   }
-  const index=base>0?round(1000*cur/base):1000;
+  // 今天的漲跌以參考價計算，但起點接續前一天收盤指數，所以指數歷史是連續的。
+  const indexBase=await indexBaseFor(db,state,date);
+  if(indexBase.isNewDay)prepared.push(db.prepare('UPDATE market_state SET index_base=?,index_base_date=? WHERE id=1').bind(indexBase.value,date));
+  const index=base>0?round(indexBase.value*cur/base):indexBase.value;
   prepared.push(db.prepare("INSERT INTO index_history(value) VALUES(?)").bind(index));
   prepared.push(db.prepare('DELETE FROM transaction_guard'));
   try { await db.batch(prepared);return true; }
