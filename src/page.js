@@ -202,6 +202,7 @@ export const PAGE_HTML = `<!DOCTYPE html>
 
 <!-- 主畫面 -->
 <div id="app" class="hidden">
+  <div id="idle-note" class="panel hidden" role="status" style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:50;max-width:calc(100% - 32px);padding:12px 16px;font-size:13px;text-align:center;cursor:pointer;border-color:var(--gold)">閒置超過 10 分鐘，已暫停更新行情。點任意處繼續。</div>
   <header>
     <span class="logo"><span class="px-latin" style="font-size:11px">▚▞</span>股市模擬大戶</span>
     <span id="index-chip">大盤指數 <b id="index-val">----</b> <span id="index-chg"></span></span>
@@ -376,7 +377,17 @@ async function login(){
 $('#btn-play').onclick=login;
 $('#nickname').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 
-function tick(){if(!document.hidden)poll();else timer=setTimeout(tick,1000);}
+// 閒置 10 分鐘（沒有點擊、打字、捲動）就暫停更新行情：
+// 開著分頁沒人看時，市場也不會一直推進、消耗資料庫每日免費額度。點任意處就恢復。
+const IDLE_MS=10*60000;
+let lastActive=Date.now(),idlePaused=false;
+function wake(){lastActive=Date.now();if(idlePaused){idlePaused=false;$('#idle-note').classList.add('hidden');clearTimeout(timer);poll();}}
+['pointerdown','keydown','wheel','touchstart'].forEach(ev=>addEventListener(ev,wake,{passive:true,capture:true}));
+function tick(){
+  if(document.hidden){timer=setTimeout(tick,1000);return;}
+  if(Date.now()-lastActive>IDLE_MS){idlePaused=true;$('#idle-note').classList.remove('hidden');return;}
+  poll();
+}
 // ---- 像素風 icon v2：16x16 字格，每個字元對應一種顏色，含動畫幀 ----
 // 台股慣例：紅漲綠跌。RED=#ff5470 (up), GREEN=#3ddc78 (down)
 const PX_PAL={K:'#14162b',k:'#3a3f5c',w:'#f4f7ff',g:'#8a90b8',G:'#c8d0e8',Y:'#ffd23f',y:'#c8951a',O:'#ff9f2e',o:'#d2691e',R:'#ff5470',r:'#c22434',E:'#3ddc78',e:'#1d9e52',B:'#4db2ff',b:'#1e5aa8',D:'#2b3a67',d:'#16204a',C:'#4dd0e1',P:'#b388ff',M:'#ff8a65'};
@@ -423,7 +434,9 @@ function pxIcon(name,size,frameIdx){
   return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'" shape-rendering="crispEdges" style="image-rendering:pixelated">'+rects+'</svg>';
 }
 // 動畫版 icon：用 CSS steps() 循環播放所有幀。回傳包一層 span + 內嵌 style。
-function pxIconAnim(name,size){
+// 平常只畫靜止的第一幀；被點到、選中的才會動（像舊版寶可夢隊伍選單裡被選中的那隻）。
+function pxIconAnim(name,size,active=true){
+  if(!active)return '<span style="position:relative;display:inline-flex;width:'+size+'px;height:'+size+'px">'+pxIcon(name,size,0)+'</span>';
   const def=PX_ICONS[name]||PX_ICONS.COIN;
   const n=def.frames.length;
   const dur=(n*0.18).toFixed(2);
@@ -591,7 +604,7 @@ async function poll(){ clearTimeout(timer);
   timer=setTimeout(tick,(state&&state.pollMs)||5000);
 }
 
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(timer);poll();}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(idlePaused)return;lastActive=Date.now();clearTimeout(timer);poll();}});
 let started=false;
 function start(){ if(started)return; started=true;
   $('#cash-coin').innerHTML=pxIcon('COIN',16);
@@ -656,7 +669,7 @@ function renderMarket(){
     if(prev!=null&&prev!==s.price)flash=s.price>prev?' flash-up':' flash-down';
     prevPrices[s.symbol]=s.price;
     return '<div class="stock-card panel'+(s.symbol===selected?' sel':'')+flash+'" data-sym="'+esc(s.symbol)+'" title="單擊選擇下單 · 點迷你走勢開圖">'
-      +'<div class="stock-head" title="'+esc(PX_NAMES[s.symbol]||s.name)+'">'+pxIconAnim(s.symbol,30)+'<span class="nick">'+esc(s.nickname||s.name)+'</span><span class="sym">'+esc(s.symbol)+'</span></div>'
+      +'<div class="stock-head" title="'+esc(PX_NAMES[s.symbol]||s.name)+'">'+pxIconAnim(s.symbol,30,s.symbol===selected)+'<span class="nick">'+esc(s.nickname||s.name)+'</span><span class="sym">'+esc(s.symbol)+'</span></div>'
       +'<div class="price">$'+fmt(s.price)+'</div>'
       +'<div class="chg-pill '+cls+'">'+(chg>=0?'▲ +':'▼ ')+fmt(Math.abs(s.price-s.ref_price))+' ('+(chg>=0?'+':'')+chg.toFixed(2)+'%)</div>'
       +'<span class="spark-btn" title="點開 K 線圖">'+sparkline(hist,200,48,color)+'</span>'
@@ -804,7 +817,12 @@ async function renderBots(){
 }
 
 // 瀏覽器記得登入狀態（session cookie 有效）時，重新整理直接進入同一帳號
-$('#login-coin').innerHTML=pxIconAnim('COIN',22);
+// 登入畫面的金幣：點一下開始轉，再點一下停。
+let coinSpin=false;
+const drawCoin=()=>{$('#login-coin').innerHTML=pxIconAnim('COIN',22,coinSpin);};
+drawCoin();
+$('#login-coin').style.cursor='pointer';
+$('#login-coin').onclick=()=>{coinSpin=!coinSpin;drawCoin();};
 api('/api/auth/session').then(r=>{if(r.ok){$('#login-screen').classList.add('hidden');$('#app').classList.remove('hidden');start();}});
 </script>
 </body>

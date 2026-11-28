@@ -1,6 +1,7 @@
 ﻿import { beforeEach, it, expect } from 'vitest';
 import { env } from 'cloudflare:test';
 import worker from '../src/index.js';
+import { flushUsage } from '../src/usage.js';
 const options=()=>({...env,ADMIN_SECRET:'test-admin-secret-123'});
 beforeEach(async()=>{for(const m of env.ORDERBOOK_MIGRATIONS)await env.DB.batch(m.queries.map(sql=>env.DB.prepare(sql)))});
 it('後台不需要密碼即可查看玩家與登入紀錄',async()=>{
@@ -42,4 +43,35 @@ it('持股記錄平均成本與未實現損益，賣出依比例扣掉成本',as
  const acc=await (await call('/api/account',{},cookie)).json();
  const h=acc.holdings.find(x=>x.symbol==='2330');
  expect(h.avg_cost).toBeCloseTo(after.cost/3,2);expect(h.unrealized).toBeCloseTo(h.market_value-after.cost,2);
+});
+
+it('後台顯示今日資料庫用量（讀寫列數、額度、每分鐘用量）',async()=>{
+ const fetch=(path,init={})=>worker.fetch(new Request('https://example.com'+path,init),env);
+ const login=await fetch('/api/auth/guest',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({nickname:'用量'})});
+ const cookie=login.headers.get('Set-Cookie').split(';')[0];
+ await fetch('/api/live?symbol=2330',{headers:{cookie}});
+ await flushUsage(env.DB,Date.now(),true);
+ const stored=await env.DB.prepare('SELECT SUM(rows_read) r,SUM(rows_written) w,SUM(requests) q FROM usage_minutes').first();
+ expect(stored.r).toBeGreaterThan(0);expect(stored.w).toBeGreaterThan(0);expect(stored.q).toBeGreaterThanOrEqual(2);
+ const u=await (await fetch('/api/admin/usage')).json();
+ expect(u).toMatchObject({ok:true,limits:{rowsRead:5000000,rowsWritten:100000},official:null});
+ expect(u.used.rowsRead).toBeGreaterThanOrEqual(stored.r);expect(u.resetAt%86400000).toBe(0);expect(u.resetAt).toBeGreaterThan(Date.now());
+ const page=await (await fetch('/admin')).text();expect(page).toContain('今日資料庫免費額度');
+});
+it('後台可把玩家從排行榜隱藏，排行榜不列機器人',async()=>{
+ const fetch=(path,init={})=>worker.fetch(new Request('https://example.com'+path,init),{...env,LIVE_CACHE_MS:'0'});
+ const login=await fetch('/api/auth/guest',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({nickname:'隱藏我'})});
+ const cookie=login.headers.get('Set-Cookie').split(';')[0];
+ const names=async()=>(await (await fetch('/api/leaderboard',{headers:{cookie}})).json()).players.map(p=>p.username);
+ const before=await names();expect(before).toContain('隱藏我');expect(before).not.toEqual(expect.arrayContaining(['造市商']));expect(before.some(n=>['動能派','價值派','恐慌賣壓','造市商'].includes(n))).toBe(false);
+ const id=(await env.DB.prepare("SELECT account_id FROM player_credentials WHERE username='隱藏我'").first()).account_id;
+ const post=(body,headers={})=>fetch('/api/admin/player/hidden',{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)});
+ expect((await post({id,hidden:true},{Origin:'https://evil.example'})).status).toBe(403);
+ expect((await post({id:1000001,hidden:true})).status).toBe(404);
+ expect((await post({id,hidden:'yes'})).status).toBe(400);
+ expect((await post({id,hidden:true})).status).toBe(200);
+ expect(await names()).not.toContain('隱藏我');
+ const overview=await (await fetch('/api/admin/overview')).json();expect(overview.players.find(p=>p.id===id).hidden).toBe(1);
+ expect((await post({id,hidden:false})).status).toBe(200);
+ expect(await names()).toContain('隱藏我');
 });
