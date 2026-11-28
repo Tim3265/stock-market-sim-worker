@@ -17,6 +17,7 @@ import { runBotActivity } from './domain/botActivity.js';
 import { noteRequest, tickIntervalMs, pollMs } from './domain/activity.js';
 import { getActiveEvents } from './domain/events.js';
 import { meter, flushUsage, noteUsageRequest } from './usage.js';
+import { idleTick } from './domain/idleMarket.js';
 
 const DEFAULT_TRADE_LIMIT = 20;
 const upgradedCache = new WeakMap();
@@ -74,6 +75,19 @@ export default {
     } finally {
       const flushing = flushUsage(rawDb);
       if (ctx && ctx.waitUntil) ctx.waitUntil(flushing); else await flushing;
+    }
+  },
+
+  // Cloudflare 排程（wrangler.jsonc 的 triggers.crons，每 5 分鐘）：沒人上線時讓股價繼續走，見 domain/idleMarket.js。
+  async scheduled(event, env) {
+    const rawDb = env.DB;
+    try {
+      const result = await idleTick(meter(rawDb), event?.scheduledTime || Date.now());
+      if (!result.ran) console.log('idle tick skipped:', result.reason);
+    } catch (err) {
+      console.error('idle tick failed', String(err));
+    } finally {
+      await flushUsage(rawDb, Date.now(), true);
     }
   },
 };

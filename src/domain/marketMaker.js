@@ -4,7 +4,7 @@ import { indexBaseFor } from './indexBase.js';
 
 const BOT = 1000000;
 
-// 有人瀏覽時市場才推進；沒人請求就完全靜止，不燒 D1 寫入額度。
+// 有人瀏覽時市場才完整推進；沒人上線時改由排程的背景行情慢慢走（見 idleMarket.js），省 D1 寫入額度。
 // 有人看盤時 tick 固定 15 秒（效能不變，見 activity.js）。
 
 export const TICK_INTERVAL_MS = 15000;

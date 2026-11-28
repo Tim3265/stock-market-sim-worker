@@ -9,6 +9,10 @@
   // 請改成你的 D1 所在地區（線上資料庫在東京：aws:ap-northeast-1）。
   "placement": { "region": "aws:ap-northeast-1" },
 
+  // 沒人上線時，每 5 分鐘讓股價走一步（背景行情，見 src/domain/idleMarket.js），走勢圖才是連續的。
+  // 一天約寫 13,000 列，是免費額度（每天 10 萬列）的 13%；今天用量超過 60% 就自動暫停。
+  "triggers": { "crons": ["*/5 * * * *"] },
+
   // 這就是「Worker + D1」的接線：
   // 把 D1 資料庫綁定到程式裡的 env.DB
   "d1_databases": [
